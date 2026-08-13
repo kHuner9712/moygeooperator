@@ -18,15 +18,29 @@
     },
     {
       "parameters": {
+        "jsCode": "// Resolve the client scope from the webhook POST body (clientId / clientCode).\nconst body = $json;\nconst clientId = body && body.clientId ? body.clientId : null;\nconst clientCode = body && body.clientCode ? body.clientCode : null;\nif (clientId || clientCode) {\n  return { json: { clientId: clientId, clientCode: clientCode } };\n}\nreturn { json: { clientCode: null } };\n"
+      },
+      "id": "wf03-scope",
+      "name": "Resolve client scope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
         "operation": "executeQuery",
         "query": "SELECT e.canonical_name, e.entity_type\nFROM entities e\nWHERE e.client_id = :clientId::uuid AND e.status = 'ACTIVE'\n  AND e.entity_type IN ('ORGANIZATION','BRAND','PRODUCT','SERVICE')",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientId"
+        },
         "options": {}
       },
       "id": "wf03-load-entities",
       "name": "Load target entities",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [220, 0],
+      "position": [440, 0],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -36,13 +50,13 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build an intent-generation prompt for the current entity, handed to Ollama.\n// 杈撳叆: $json = load-entities 杈撳嚭鐨勫崟涓?entity {canonical_name, entity_type}.\n// 杈撳嚭: { prompt } 鍗曟潯銆俓nconst entity = $json.canonical_name || '';\nconst type = $json.entity_type || '';\nconst prompt =\n  'You are a GEO intent strategist for the B2B company \"' + entity + '\" (' + type + ').\\n' +\n  'Return STRICT JSON only, shape:\\n' +\n  '{\"intents\":[{\"entity_name\":\"' + entity + '\",\"intent_type\",\"label\",\"description\",' +\n  '\"commercial\",\"relevance\",\"opportunity\",' +\n  '\"queries\":[{\"query_text\",\"language\":\"zh-CN\",\"region\":\"CN\",\"priority\"}]}]}\\n' +\n  'intent_type one of: PRODUCT, PURCHASE, COMPARE, QUESTION, SCENARIO, REGION, ' +\n  'TRUST, BRAND, AFTER_SALES. commercial/relevance/opportunity are 0-1 numbers; ' +\n  'priority 0-100. Each intent carries 2-5 realistic B2B precision-manufacturing queries.\\n\\nJSON: ';\nreturn { json: { prompt: prompt } };\n"
+        "jsCode": "// Build an intent-generation prompt for the current entity, handed to Ollama.\n// 杈撳叆: $json = load-entities 杈撳嚭鐨勫崟涓?entity {canonical_name, entity_type}.\n// 杈撳嚭: { prompt } 鍗曟潯銆俓nconst entity = $json.canonical_name || '';\nconst type = $json.entity_type || '';\nconst prompt =\n  'You are a GEO intent strategist for the B2B company \"' + entity + '\" (' + type + ').\\n' +\n  'Return STRICT JSON only, shape:\\n' +\n  '{\"intents\":[{\"entity_name\":\"' + entity + '\",\"intent_type\",\"label\",\"description\",' +\n  '\"commercial\",\"relevance\",\"opportunity\",' +\n  '\"queries\":[{\"query_text\",\"language\":\"zh-CN\",\"region\":\"CN\",\"priority\"}]}]}\\n' +\n  'intent_type one of: PRODUCT, PURCHASE, COMPARE, QUESTION, SCENARIO, REGION, ' +\n  'TRUST, BRAND, AFTER_SALES. commercial/relevance/opportunity are 0-100 numbers; ' +\n  'priority 0-100. Each intent carries 2-5 realistic B2B precision-manufacturing queries.\\n\\nJSON: ';\nreturn { json: { prompt: prompt } };\n"
       },
       "id": "wf03-build-prompt",
       "name": "Build intent prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 0]
+      "position": [660, 0]
     },
     {
       "parameters": {
@@ -56,39 +70,33 @@
       "name": "Call Ollama (intents)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [660, 0]
+      "position": [880, 0]
     },
     {
       "parameters": {
-        "jsCode": "// Parse the Ollama JSON response into intent candidates. A non-JSON / empty\n// reply yields an empty list (fail closed 鈥?no fabricated intents).\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\nconst intents = Array.isArray(data.intents) ? data.intents : [];\nreturn { json: { intents: intents } };\n"
+        "jsCode": "// Parse the Ollama JSON response into intent candidates. A non-JSON / empty\n// reply yields no items (fail closed). Emits ONE item per valid intent so the\n// downstream DB register node runs once per intent. Malformed intents (missing\n// intent_type) are skipped.\nconst scope = $node['Resolve client scope'].json;\nconst clientCode = scope.clientCode;\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\nconst intents = Array.isArray(data.intents) ? data.intents : [];\nconst out = [];\nfor (const it of intents) {\n  if (!it || typeof it !== 'object') continue;\n  if (!it.intent_type) continue;\n  out.push({\n    clientCode: clientCode,\n    entityName: it.entity_name,\n    intentType: it.intent_type,\n    label: it.label,\n    description: it.description,\n    commercial: it.commercial,\n    relevance: it.relevance,\n    opportunity: it.opportunity,\n    queries: JSON.stringify(it.queries || [])\n  });\n}\nreturn out;\n"
       },
       "id": "wf03-parse",
       "name": "Parse intents",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 0]
-    },
-    {
-      "parameters": {
-        "jsCode": "// PLACEHOLDER 鈥?semantic dedup against existing intents + scoring.\n// Keep 12-30 active priority intents per client. Drop duplicates.\n// This stage ships the DB write path; dedup/scoring is wired here later.\nreturn { json: { intents: [] } };\n"
-      },
-      "id": "wf03-dedup",
-      "name": "Dedup + score (placeholder)",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [660, 0]
+      "position": [1100, 0]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT register_intent_with_queries(:clientCode, :entityName, :intentType, :label, :description, :commercial, :relevance, :opportunity, :queries::jsonb) AS result",
+        "query": "SELECT (register_intent_with_queries(:clientCode, :entityName, :intentType, :label, :description, :commercial, :relevance, :opportunity, :queries::jsonb)->>'intent_id')::uuid AS intent_id, :label AS label",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientCode,entityName,intentType,label,description,commercial,relevance,opportunity,queries,label"
+        },
         "options": {}
       },
-      "id": "wf03-register",
-      "name": "Register Intent + Queries",
+      "id": "wf03-dedup",
+      "name": "Dedupe & score intents",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [880, 0],
+      "position": [1320, 0],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -98,17 +106,30 @@
     },
     {
       "parameters": {
-        "jsCode": "// PLACEHOLDER 鈥?enqueue Engine Observation jobs (WF-04) for due intents.\n// Use enqueue_job() with a deterministic unique_key per (client, intent, run).\nreturn { json: { queued_for_observation: $json.result } };\n"
+        "operation": "executeQuery",
+        "query": "SELECT enqueue_job( (SELECT id FROM clients WHERE code = '{{ $('Resolve client scope').item.json.clientCode }}'), 'ENGINE_OBSERVATION', jsonb_build_object('intent_id', '{{ $json.intent_id }}'::uuid), 50, now(), 3, 'eo:{{ $('Resolve client scope').item.json.clientCode }}:{{ $json.intent_id }}') AS job_id",
+        "options": {}
       },
       "id": "wf03-enqueue",
-      "name": "Queue Engine Observation (placeholder)",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1100, 0]
+      "name": "Queue Engine Observation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1540, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
     }
   ],
   "connections": {
     "Trigger": {
+      "main": [
+        [{ "node": "Resolve client scope", "type": "main", "index": 0 }]
+      ]
+    },
+    "Resolve client scope": {
       "main": [
         [{ "node": "Load target entities", "type": "main", "index": 0 }]
       ]
@@ -130,17 +151,12 @@
     },
     "Parse intents": {
       "main": [
-        [{ "node": "Dedup + score (placeholder)", "type": "main", "index": 0 }]
+        [{ "node": "Dedupe & score intents", "type": "main", "index": 0 }]
       ]
     },
-    "Dedup + score (placeholder)": {
+    "Dedupe & score intents": {
       "main": [
-        [{ "node": "Register Intent + Queries", "type": "main", "index": 0 }]
-      ]
-    },
-    "Register Intent + Queries": {
-      "main": [
-        [{ "node": "Queue Engine Observation (placeholder)", "type": "main", "index": 0 }]
+        [{ "node": "Queue Engine Observation", "type": "main", "index": 0 }]
       ]
     }
   },

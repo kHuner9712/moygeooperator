@@ -42,6 +42,11 @@ BEGIN
       AND b.status='READY'
   LOOP
     v_asset := generate_content_asset('SYNTH-ACME', v_brief, 'MARKDOWN');
+    -- P0.6 fact gate + compliance gate: an asset must be approved
+    -- (fact_check_status=PASSED AND compliance_status=PASSED) before it can
+    -- enter the publication queue. Synthetic content built from VERIFIED
+    -- claims passes; a hallucinated asset would be BLOCKED here.
+    PERFORM approve_content_asset(v_asset);
     -- Surface adaptation: one variant per active owned surface.
     FOR v_surface IN
       SELECT s.id FROM surfaces s

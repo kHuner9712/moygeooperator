@@ -97,7 +97,7 @@
         "options": {}
       },
       "id": "wf02-crawl",
-      "name": "Crawl page (Crawl4AI placeholder)",
+      "name": "Crawl page (Crawl4AI)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [880, 0]
@@ -185,10 +185,10 @@
     },
     "Parse candidates": {
       "main": [
-        [{ "node": "Crawl page (Crawl4AI placeholder)", "type": "main", "index": 0 }]
+        [{ "node": "Crawl page (Crawl4AI)", "type": "main", "index": 0 }]
       ]
     },
-    "Crawl page (Crawl4AI placeholder)": {
+    "Crawl page (Crawl4AI)": {
       "main": [
         [{ "node": "Upsert Surface", "type": "main", "index": 0 }]
       ]

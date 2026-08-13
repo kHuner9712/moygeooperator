@@ -24,23 +24,25 @@ WHERE client_id IN (SELECT id FROM _s8_cid) AND import_key='SYNTH-ACME-SURF-BAIK
 SELECT record_observation(
   'SYNTH-ACME',
   (SELECT id FROM _s8_eng_search), (SELECT id FROM _s8_q),
-  'API_OBSERVATION', CURRENT_DATE - 14, 'SYNTH-OBS-PREV-0001',
+  'API_OBSERVATION', (CURRENT_DATE - 14)::timestamptz, 'SYNTH-OBS-PREV-0001',
   'AcmePrecision 被提及，但未作为首选推荐（SYNTHETIC 前周期基线）。',
   true, false, 4, 'CORRECT',
   '[{"url":"https://baike.example.org/acme-precision","surface_type":"KNOWLEDGE_PAGE"}]'::jsonb,
   (SELECT jsonb_agg(id::text) FROM _s8_surf_baike),
   'https://artifact.example.org/obs-prev-0001', 'synthetic://artifact/prev-0001.pdf', 780, NULL,
-  '{"wrong_facts":0,"missing_facts":0,"competitors":[],"uncertainty":false}'::jsonb) AS prev_obs1;
+  '{"wrong_facts":0,"missing_facts":0,"competitors":[],"uncertainty":false}'::jsonb,
+  'UI_OBSERVATION') AS prev_obs1;
 
 SELECT record_observation(
   'SYNTH-ACME',
   (SELECT id FROM _s8_eng_search), (SELECT id FROM _s8_q),
-  'API_OBSERVATION', CURRENT_DATE - 14, 'SYNTH-OBS-PREV-0002',
+  'API_OBSERVATION', (CURRENT_DATE - 14)::timestamptz, 'SYNTH-OBS-PREV-0002',
   '目标未出现在结果中（SYNTHETIC 前周期基线）。',
   false, false, NULL, 'NO_TARGET_FACTS',
   '[]'::jsonb, '[]'::jsonb,
   'https://artifact.example.org/obs-prev-0002', 'synthetic://artifact/prev-0002.pdf', 700, NULL,
-  '{"wrong_facts":0,"missing_facts":1,"competitors":["竞品A"],"uncertainty":false}'::jsonb) AS prev_obs2;
+  '{"wrong_facts":0,"missing_facts":1,"competitors":["竞品A"],"uncertainty":false}'::jsonb,
+  'UI_OBSERVATION') AS prev_obs2;
 
 -- Verify the OFFICIAL_SITE publication record that Stage 7 published.
 CREATE OR REPLACE FUNCTION __synth_verify() RETURNS void LANGUAGE plpgsql AS $$

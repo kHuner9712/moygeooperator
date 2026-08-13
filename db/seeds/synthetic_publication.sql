@@ -3,9 +3,11 @@
 -- THIS DATA IS SYNTHETIC. Demonstrates mode-routed dispatch on the fictional
 -- "合成测试精密工业有限公司" (SYNTH-ACME) using the OFFICIAL_SITE / AMAP surfaces
 -- that already carry VERIFIED content assets (from Stage 6).
---  - OFFICIAL_SITE -> AUTO_API  (official adapter + credential)  -> PUBLISHED
+--  - OFFICIAL_SITE -> AUTO_API  (official adapter + credential)  -> PUBLISHING
+--                                                                   (awaiting real provider; P0.7)
 --  - AMAP          -> BROWSER_ASSISTED                           -> WAITING_APPROVAL
---  - BAIDU_BAIKE   -> AUTO_API   (adapter NOT registered)        -> BLOCKED (fail closed)
+--  - BAIDU_BAIKE   -> AUTO_API   (adapter NOT registered)        -> UNSUPPORTED_PLATFORM
+--                                                                   + MANUAL_REQUIRED
 --  - ALIBABA_1688  -> MANUAL_REQUIRED                            -> WAITING_APPROVAL
 -- ============================================================================
 \set ON_ERROR_STOP on
@@ -61,6 +63,11 @@ BEGIN
       v_asset := (SELECT a.id FROM content_assets a
                   WHERE a.brief_id=v_brief AND a.surface_id=v_surf LIMIT 1);
     END IF;
+    -- P0.6 fact gate: a publication task requires READY_TO_PUBLISH, so a
+    -- freshly generated asset must pass the fact gate before it can be used.
+    IF v_asset IS NOT NULL THEN
+      PERFORM approve_content_asset(v_asset);
+    END IF;
   END LOOP;
 END;
 $$;
@@ -83,6 +90,9 @@ BEGIN
       AND a.id = (SELECT a2.id FROM content_assets a2
                   WHERE a2.surface_id=s.id ORDER BY a2.id LIMIT 1)
   LOOP
+    -- P0.6 fact gate: a publication task requires a READY_TO_PUBLISH asset.
+    -- Approve the selected asset (surface variants may be DRAFT from adaptation).
+    PERFORM approve_content_asset(v_asset);
     v_task := create_publication_task('SYNTH-ACME', v_asset, v_surf);
     IF v_task IS NOT NULL THEN
       PERFORM dispatch_publication(v_task);

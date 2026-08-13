@@ -262,15 +262,15 @@
     },
     "Load client": {
       "main": [
-        [{ "node": "Generate report", "type": "main", "index": 0 }]
-      ]
-    },
-    "Generate report": {
-      "main": [
         [{ "node": "Schedule engine retest", "type": "main", "index": 0 }]
       ]
     },
     "Schedule engine retest": {
+      "main": [
+        [{ "node": "Generate report", "type": "main", "index": 0 }]
+      ]
+    },
+    "Generate report": {
       "main": [
         [{ "node": "Check exception queue", "type": "main", "index": 0 }]
       ]
