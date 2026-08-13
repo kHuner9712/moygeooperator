@@ -143,10 +143,28 @@
         "options": {}
       },
       "id": "wf06-store",
-      "name": "Store VERIFIED content asset",
+      "name": "Store content asset (draft)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
       "position": [2200, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT approve_content_asset('{{ $json.asset_id }}'::uuid) AS gate",
+        "options": {}
+      },
+      "id": "wf06-gate",
+      "name": "Approve content (fact gate)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [2420, 0],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -227,10 +245,15 @@
     },
     "Parse LLM draft": {
       "main": [
-        [{ "node": "Store VERIFIED content asset", "type": "main", "index": 0 }]
+        [{ "node": "Store content asset (draft)", "type": "main", "index": 0 }]
       ]
     },
-    "Store VERIFIED content asset": {
+    "Store content asset (draft)": {
+      "main": [
+        [{ "node": "Approve content (fact gate)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Approve content (fact gate)": {
       "main": [
         [{ "node": "Finish job", "type": "main", "index": 0 }]
       ]
