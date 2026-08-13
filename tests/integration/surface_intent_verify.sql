@@ -35,11 +35,14 @@ BEGIN
   SELECT count(*) INTO v_active_surface FROM surfaces WHERE client_id=v_cid AND active;
   IF v_active_surface <> v_surface THEN RAISE EXCEPTION 'FAIL some surfaces inactive'; END IF;
 
-  -- priority_score computed from commercial+relevance+opportunity.
+  -- priority_score computed from commercial+relevance+opportunity (P0.3:
+  -- unified 0-100 weighted scale, 0.35/0.40/0.25). Values are 0-100, not 0-300.
   SELECT priority_score INTO v_priority FROM intents
     WHERE client_id=v_cid AND label='采购精密气缸供应商';
-  IF v_priority IS DISTINCT FROM 255 THEN
-    RAISE EXCEPTION 'FAIL purchase priority expected 255 got %', v_priority; END IF;
+  IF v_priority IS DISTINCT FROM round(0.35*95 + 0.40*85 + 0.25*75, 2) THEN
+    RAISE EXCEPTION 'FAIL purchase priority expected weighted 0-100 got %', v_priority; END IF;
+  IF v_priority < 0 OR v_priority > 100 THEN
+    RAISE EXCEPTION 'FAIL priority outside 0-100 scale: %', v_priority; END IF;
 
   -- Every intent has at least one query.
   SELECT count(*) INTO v_orphans FROM intents i
