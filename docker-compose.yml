@@ -34,7 +34,8 @@ services:
       start_period: 15s
 
   nocodb:
-    image: nocodb/nocodb:latest
+    # Pinned: verified operator UI version (2026-05). Do not drift to :latest.
+    image: nocodb/nocodb:0.263.1
     container_name: geo-operator-nocodb
     restart: unless-stopped
     depends_on:
@@ -55,7 +56,8 @@ services:
       start_period: 30s
 
   n8n:
-    image: n8nio/n8n:latest
+    # Pinned: verified orchestration version (2026-08 stable). Do not drift to :latest.
+    image: n8nio/n8n:2.34.5
     container_name: geo-operator-n8n
     restart: unless-stopped
     depends_on:
@@ -93,7 +95,8 @@ services:
       start_period: 30s
 
   ollama:
-    image: ollama/ollama:latest
+    # Pinned: verified local LLM runtime (2026-08 release). Do not drift to :latest.
+    image: ollama/ollama:0.32.7
     container_name: geo-operator-ollama
     restart: unless-stopped
     # Default local LLM (WF-01 extraction, WF-04 observer, WF-06 content).
@@ -114,6 +117,7 @@ services:
 
 # ---- Stage 3 tooling (WF-02 discovery). Start explicitly via profile. ----
   searxng:
+    # Tooling profile only (WF-02 discovery). Pin to a verified tag before prod.
     image: searxng/searxng:latest
     profiles: ["tooling"]
     container_name: geo-operator-searxng
@@ -131,6 +135,7 @@ services:
       start_period: 30s
 
   crawl4ai:
+    # Tooling profile only (WF-02 discovery). Pin to a verified tag before prod.
     image: unclecode/crawl4ai:latest
     profiles: ["tooling"]
     container_name: geo-operator-crawl4ai
