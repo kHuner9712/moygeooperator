@@ -1,0 +1,185 @@
+{
+  "name": "WF-07 Publishing",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wf07-publish",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wf07-trigger",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "wf07-publishing"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.code AS client_code, j.id AS job_id, j.client_id, j.unique_key, j.payload_json, j.priority\nFROM claim_next_job('wf07', 900, 'PUBLICATION') j\nLEFT JOIN clients c ON c.id = j.client_id",
+        "options": {}
+      },
+      "id": "wf07-claim",
+      "name": "Claim due publication job",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [220, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// WF-07 entry. Resolve the publication task from the job payload\n// ({ task_id }). Graceful stop when no job is claimed.\nconst j = $json;\nif (!j.job_id) return { json: { skipped: true } };\nconst payload = (typeof j.payload_json === 'string' ? JSON.parse(j.payload_json) : j.payload_json) || {};\nreturn {\n  json: {\n    hasJob: true,\n    clientCode: j.client_code,\n    jobId: j.job_id,\n    taskId: payload.task_id || null\n  }\n};\n"
+      },
+      "id": "wf07-entry",
+      "name": "Resolve scope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "wf07-cond-job",
+              "leftValue": "={{ $json.hasJob }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf07-hasjob",
+      "name": "Has job?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.code AS client_code, t.id AS task_id, t.mode, t.status, t.credential_ref,\n       s.platform, s.surface_type, s.canonical_url,\n       a.title, a.body\nFROM publication_tasks t\nJOIN surfaces s ON s.id = t.surface_id\nJOIN content_assets a ON a.id = t.content_asset_id\nJOIN clients c ON c.id = t.client_id\nWHERE t.id = '{{ $json.taskId }}'::uuid",
+        "options": {}
+      },
+      "id": "wf07-load",
+      "name": "Load publication task",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [880, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT dispatch_publication('{{ $json.task_id }}'::uuid) AS outcome",
+        "options": {}
+      },
+      "id": "wf07-dispatch",
+      "name": "Dispatch publication",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1100, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Route by dispatch outcome. PUBLISHED / WAITING_APPROVAL are normal endings;\n// BLOCKED already raised a fail-closed exception for a human to action.\nconst outcome = $json.outcome || {};\nconst mode = outcome.mode || '';\nconst res = outcome.outcome || '';\nreturn {\n  json: {\n    outcome: res,\n    mode: mode,\n    needsApproval: res === 'WAITING_APPROVAL',\n    blocked: res === 'BLOCKED'\n  }\n};\n"
+      },
+      "id": "wf07-route",
+      "name": "Route outcome",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT finish_job('{{ $('Resolve scope').item.json.jobId }}'::uuid)",
+        "options": {}
+      },
+      "id": "wf07-finish",
+      "name": "Finish job",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1540, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// No due publication job claimed 鈥?end cleanly.\nreturn { json: { skipped: true } };\n"
+      },
+      "id": "wf07-noop",
+      "name": "No-op (no job)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 200]
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [{ "node": "Claim due publication job", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claim due publication job": {
+      "main": [
+        [{ "node": "Resolve scope", "type": "main", "index": 0 }]
+      ]
+    },
+    "Resolve scope": {
+      "main": [
+        [{ "node": "Has job?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has job?": {
+      "main": [
+        [{ "node": "Load publication task", "type": "main", "index": 0 }],
+        [{ "node": "No-op (no job)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Load publication task": {
+      "main": [
+        [{ "node": "Dispatch publication", "type": "main", "index": 0 }]
+      ]
+    },
+    "Dispatch publication": {
+      "main": [
+        [{ "node": "Route outcome", "type": "main", "index": 0 }]
+      ]
+    },
+    "Route outcome": {
+      "main": [
+        [{ "node": "Finish job", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

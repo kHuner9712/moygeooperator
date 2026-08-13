@@ -1,0 +1,52 @@
+# ---- Secrets / credentials ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credential_refs/*.json
+
+# ---- Runtime artifacts (never commit) ----
+storage/
+*.log
+/tmp
+tmp/
+
+# ---- Client private files / raw crawls / screenshots ----
+storage/client-files/
+crawl/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.pdf
+!docs/**/*.pdf
+
+# ---- Dependency / local builds ----
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ---- Backups ----
+backups/
+*.sql.gz
+*.dump
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ---- Local debug / scratch files (never commit) ----
+_*.sql
+_*.js
+_*.json
+_*.txt
+_*.ps1
+tmp_*
+workflows_raw.json
+e2e_body.json

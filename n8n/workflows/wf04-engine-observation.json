@@ -1,0 +1,247 @@
+{
+  "name": "WF-04 Engine Baseline / Observation",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wf04-observe",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wf04-trigger",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "wf04-engine-observation"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.code AS client_code, j.id AS job_id, j.client_id, j.unique_key, j.payload_json, j.priority\nFROM claim_next_job('wf04', 900, 'ENGINE_OBSERVATION') j\nLEFT JOIN clients c ON c.id = j.client_id\nWHERE j.id IS NOT NULL",
+        "options": {}
+      },
+      "id": "wf04-claim",
+      "name": "Claim due observation job",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [220, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// WF-04 observer selection. Graceful stop when no job is claimed.\n// On an empty queue the claim query now returns ZERO rows (and the old all-NULL\n// row is filtered by the WHERE clause). Emit ZERO items for the no-job case so\n// the 'Has job?' IF node receives no items and passes none to either branch;\n// downstream nodes then simply do nothing and the run ends cleanly.\nconst items = $input.all();\nif (items.length === 0) return [];\nconst j = items[0].json;\nif (!j || !j.job_id) return [];\nconst payload = (typeof j.payload_json === 'string' ? JSON.parse(j.payload_json) : j.payload_json) || {};\nconst engineId = payload.engine_id || null;\nconst queryId = payload.query_id || null;\nconst mode = (payload.mode || 'chat').toLowerCase();\nconst observer = mode === 'chat' ? 'ollama' : 'unimplemented';\nreturn [{\n  json: {\n    state: 'job',\n    hasJob: true,\n    clientCode: j.client_code,\n    jobId: j.job_id,\n    runKey: j.unique_key || ('obs:' + j.client_id + ':' + engineId + ':' + queryId),\n    engineId: engineId,\n    queryId: queryId,\n    mode: mode,\n    observer: observer\n  }\n}];\n"
+      },
+      "id": "wf04-observer",
+      "name": "Select observer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "wf04-cond-job",
+              "leftValue": "={{ $json.state }}",
+              "rightValue": "job",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf04-hasjob",
+      "name": "Has job?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT q.query_text, q.language, q.region,\n       e.canonical_name,\n       COALESCE(e.aliases, '[]'::jsonb) AS aliases,\n       COALESCE((SELECT jsonb_agg(c.claim_text) FROM claims c\n                 WHERE c.entity_id = e.id AND c.verification = 'VERIFIED'),\n                '[]'::jsonb) AS verified_claims\nFROM queries q\nLEFT JOIN intents i ON i.id = q.intent_id\nLEFT JOIN entities e ON e.id = i.entity_id\nWHERE q.id = '{{ $json.queryId }}'::uuid",
+        "options": {}
+      },
+      "id": "wf04-context",
+      "name": "Load observer context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [880, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Cold-probe prompt: the LLM answers the query naturally, WITHOUT being told to\n// mention the target, so we measure organic target visibility. The answer is raw\n// observation evidence 鈥?it never becomes a canonical business fact.\nconst ctx = $json;\nconst target = ctx.canonical_name || '';\nconst aliases = Array.isArray(ctx.aliases) ? ctx.aliases : [];\nconst targetNames = [target].concat(aliases).filter(Boolean);\nconst prompt =\n  'You are a neutral AI assistant. Answer the following query naturally and concisely, ' +\n  'the way a general search or chat assistant would. Do not mention any company or brand ' +\n  'unless it is genuinely relevant to the answer.\\n\\nQuery: ' + (ctx.query_text || '');\nreturn { json: { prompt: prompt, targetNames: targetNames, queryText: ctx.query_text || '' } };\n"
+      },
+      "id": "wf04-build-prompt",
+      "name": "Build observer prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/generate",
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify({ model: 'qwen2.5:0.5b', prompt: $json.prompt, stream: false, options: { temperature: 0 } }) }}",
+        "specifyBody": "json",
+        "options": {}
+      },
+      "id": "wf04-ollama",
+      "name": "Call Ollama (local LLM observer)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract structured observation. Extraction is RULE-BASED (string-matching the\n// target aliases against the answer), NOT the LLM's self-report 鈥?the generating\n// model is not the sole judge of its own output.\nconst raw = $json.response;\nlet answerText = '';\nif (typeof raw === 'string') {\n  try { const p = JSON.parse(raw); answerText = p.response || raw; } catch (e) { answerText = raw; }\n} else if (raw && raw.response) {\n  answerText = raw.response;\n}\nanswerText = String(answerText).trim();\nconst targetNames = $node['Build observer prompt'].json.targetNames || [];\nconst lower = answerText.toLowerCase();\nconst mentioned = targetNames.some(n => n && lower.indexOf(String(n).toLowerCase()) !== -1);\nconst recommendKw = ['推荐', '建议', '值得', 'recommend', 'best'];\nconst recommended = mentioned && recommendKw.some(k => lower.indexOf(k) !== -1);\nconst factuality = mentioned ? 'CORRECT' : 'NO_TARGET_FACTS';\nconst job = $node['Select observer'].json;\nreturn {\n  json: {\n    clientCode: job.clientCode,\n    engineId: job.engineId,\n    queryId: job.queryId,\n    observationKind: 'API_OBSERVATION',\n    observedAt: new Date().toISOString(),\n    runKey: job.runKey,\n    answerText: answerText,\n    targetMentioned: mentioned,\n    targetRecommended: recommended,\n    positionHint: null,\n    factualityStatus: factuality,\n    citations: '[]',\n    citedSurfaceIds: '[]',\n    evidenceUri: null,\n    rawArtifactRef: null,\n    latencyMs: ($json.total_duration ? Math.round($json.total_duration / 1000000) : null),\n    metadata: JSON.stringify({ wrong_facts: 0, missing_facts: mentioned ? 0 : 1, competitors: [], uncertainty: false, observer: 'ollama', model: $json.model || 'qwen2.5' })\n  }\n};\n"
+      },
+      "id": "wf04-parse",
+      "name": "Parse & extract",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT record_observation(\n  $1, $2::uuid, $3::uuid,\n  $4::observation_kind, $5::timestamptz, $6,\n  $7, $8, $9, $10,\n  $11, $12::jsonb, $13::jsonb, $14,\n  $15, $16, NULL, $17::jsonb\n) AS observation_id",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientCode,engineId,queryId,observationKind,observedAt,runKey,answerText,targetMentioned,targetRecommended,positionHint,factualityStatus,citations,citedSurfaceIds,evidenceUri,rawArtifactRef,latencyMs,metadata"
+        },
+        "options": {}
+      },
+      "id": "wf04-record",
+      "name": "Record observation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1760, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT finish_job('{{ $('Select observer').item.json.jobId }}'::uuid)",
+        "options": {}
+      },
+      "id": "wf04-finish",
+      "name": "Finish job",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1980, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT refresh_engine_surface_profiles('{{ $('Select observer').item.json.engineId }}'::uuid, CURRENT_DATE - 7) AS profiles",
+        "options": {}
+      },
+      "id": "wf04-refresh",
+      "name": "Refresh engine surface profiles",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [2200, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// No due job was claimed 鈥?end the run cleanly without erroring.\nreturn { json: { skipped: true } };\n"
+      },
+      "id": "wf04-noop",
+      "name": "No-op (no job)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 200]
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [{ "node": "Claim due observation job", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claim due observation job": {
+      "main": [
+        [{ "node": "Select observer", "type": "main", "index": 0 }]
+      ]
+    },
+    "Select observer": {
+      "main": [
+        [{ "node": "Has job?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has job?": {
+      "main": [
+        [{ "node": "Load observer context", "type": "main", "index": 0 }],
+        [{ "node": "No-op (no job)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Load observer context": {
+      "main": [
+        [{ "node": "Build observer prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build observer prompt": {
+      "main": [
+        [{ "node": "Call Ollama (local LLM observer)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call Ollama (local LLM observer)": {
+      "main": [
+        [{ "node": "Parse & extract", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse & extract": {
+      "main": [
+        [{ "node": "Record observation", "type": "main", "index": 0 }]
+      ]
+    },
+    "Record observation": {
+      "main": [
+        [{ "node": "Finish job", "type": "main", "index": 0 }]
+      ]
+    },
+    "Finish job": {
+      "main": [
+        [{ "node": "Refresh engine surface profiles", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

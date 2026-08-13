@@ -1,0 +1,150 @@
+{
+  "name": "WF-03 Intent / Query Generation & Prioritization",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wf03-intent",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wf03-trigger",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "wf03-intent-generation"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT e.canonical_name, e.entity_type\nFROM entities e\nWHERE e.client_id = :clientId::uuid AND e.status = 'ACTIVE'\n  AND e.entity_type IN ('ORGANIZATION','BRAND','PRODUCT','SERVICE')",
+        "options": {}
+      },
+      "id": "wf03-load-entities",
+      "name": "Load target entities",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [220, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build an intent-generation prompt for the current entity, handed to Ollama.\n// 杈撳叆: $json = load-entities 杈撳嚭鐨勫崟涓?entity {canonical_name, entity_type}.\n// 杈撳嚭: { prompt } 鍗曟潯銆俓nconst entity = $json.canonical_name || '';\nconst type = $json.entity_type || '';\nconst prompt =\n  'You are a GEO intent strategist for the B2B company \"' + entity + '\" (' + type + ').\\n' +\n  'Return STRICT JSON only, shape:\\n' +\n  '{\"intents\":[{\"entity_name\":\"' + entity + '\",\"intent_type\",\"label\",\"description\",' +\n  '\"commercial\",\"relevance\",\"opportunity\",' +\n  '\"queries\":[{\"query_text\",\"language\":\"zh-CN\",\"region\":\"CN\",\"priority\"}]}]}\\n' +\n  'intent_type one of: PRODUCT, PURCHASE, COMPARE, QUESTION, SCENARIO, REGION, ' +\n  'TRUST, BRAND, AFTER_SALES. commercial/relevance/opportunity are 0-1 numbers; ' +\n  'priority 0-100. Each intent carries 2-5 realistic B2B precision-manufacturing queries.\\n\\nJSON: ';\nreturn { json: { prompt: prompt } };\n"
+      },
+      "id": "wf03-build-prompt",
+      "name": "Build intent prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/generate",
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5'), prompt: $json.prompt, stream: false, format: 'json', options: { temperature: 0.3 } }) }}",
+        "options": {}
+      },
+      "id": "wf03-ollama",
+      "name": "Call Ollama (intents)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the Ollama JSON response into intent candidates. A non-JSON / empty\n// reply yields an empty list (fail closed 鈥?no fabricated intents).\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\nconst intents = Array.isArray(data.intents) ? data.intents : [];\nreturn { json: { intents: intents } };\n"
+      },
+      "id": "wf03-parse",
+      "name": "Parse intents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// PLACEHOLDER 鈥?semantic dedup against existing intents + scoring.\n// Keep 12-30 active priority intents per client. Drop duplicates.\n// This stage ships the DB write path; dedup/scoring is wired here later.\nreturn { json: { intents: [] } };\n"
+      },
+      "id": "wf03-dedup",
+      "name": "Dedup + score (placeholder)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT register_intent_with_queries(:clientCode, :entityName, :intentType, :label, :description, :commercial, :relevance, :opportunity, :queries::jsonb) AS result",
+        "options": {}
+      },
+      "id": "wf03-register",
+      "name": "Register Intent + Queries",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [880, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// PLACEHOLDER 鈥?enqueue Engine Observation jobs (WF-04) for due intents.\n// Use enqueue_job() with a deterministic unique_key per (client, intent, run).\nreturn { json: { queued_for_observation: $json.result } };\n"
+      },
+      "id": "wf03-enqueue",
+      "name": "Queue Engine Observation (placeholder)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0]
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [{ "node": "Load target entities", "type": "main", "index": 0 }]
+      ]
+    },
+    "Load target entities": {
+      "main": [
+        [{ "node": "Build intent prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build intent prompt": {
+      "main": [
+        [{ "node": "Call Ollama (intents)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call Ollama (intents)": {
+      "main": [
+        [{ "node": "Parse intents", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse intents": {
+      "main": [
+        [{ "node": "Dedup + score (placeholder)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Dedup + score (placeholder)": {
+      "main": [
+        [{ "node": "Register Intent + Queries", "type": "main", "index": 0 }]
+      ]
+    },
+    "Register Intent + Queries": {
+      "main": [
+        [{ "node": "Queue Engine Observation (placeholder)", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

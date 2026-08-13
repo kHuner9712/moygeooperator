@@ -1,0 +1,210 @@
+{
+  "name": "WF-02 Entity / Surface Discovery",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wf02-discovery",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wf02-trigger",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "wf02-surface-discovery"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT e.canonical_name, e.aliases, e.entity_type\nFROM entities e\nWHERE e.client_id = :clientId::uuid AND e.status = 'ACTIVE'\nORDER BY e.entity_type",
+        "options": {}
+      },
+      "id": "wf02-load-entities",
+      "name": "Load target entities",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [220, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://searxng:8080/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "q", "value": "={{ $json.canonical_name }}" },
+            { "name": "format", "value": "json" },
+            { "name": "language", "value": "zh-CN" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wf02-searxng",
+      "name": "SearXNG search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a candidate-classification prompt from the SearXNG results, handed to\n// Ollama. 杈撳叆: $json = SearXNG JSON (results[]).\n// 杈撳嚭: { prompt } 鍗曟潯銆備粎淇濈暀灞炰簬鐩爣浼佷笟鐨勬寮?surface锛岃垗鍘昏鎶ャ€俓nconst results = Array.isArray($json.results) ? $json.results : [];\nconst items = results.map(r => '- ' + (r.url || '') + ' | ' + (r.title || '')).join('\\n');\nconst prompt =\n  'You classify web search results for a GEO target company (B2B precision ' +\n  'manufacturer). Keep ONLY URLs that are official/authoritative surfaces of ' +\n  'that company: its own website, knowledge-page entries, B2B listings, or ' +\n  'map listings. Drop ads, SEO spam, forums, news aggregators, and unrelated pages.\\n' +\n  'Return STRICT JSON only: {\"candidates\":[{\"url\",\"surface_type\",\"platform\"}]}\\n' +\n  'surface_type one of: WEBSITE, KNOWLEDGE_PAGE, B2B_LISTING, MAP_LISTING, SOCIAL.\\n' +\n  'platform one of: OFFICIAL_SITE, WIKIPEDIA, BAIDU_BAIKE, ALIBABA_1688, AMAP, LINKEDIN.\\n\\n' +\n  'RESULTS:\\n' + (items || '(none)') + '\\n\\nJSON: ';\nreturn { json: { prompt: prompt } };\n"
+      },
+      "id": "wf02-build-prompt",
+      "name": "Build classify prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/generate",
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5'), prompt: $json.prompt, stream: false, format: 'json', options: { temperature: 0.0 } }) }}",
+        "options": {}
+      },
+      "id": "wf02-ollama",
+      "name": "Call Ollama (classify)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the Ollama JSON response into a candidate list. A non-JSON or empty\n// reply yields an empty list (fail closed 鈥?no false-positive surfaces).\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\nconst candidates = Array.isArray(data.candidates) ? data.candidates : [];\nreturn { json: { candidates: candidates } };\n"
+      },
+      "id": "wf02-parse",
+      "name": "Parse candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://crawl4ai:8000/crawl",
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify({ url: $json.candidates[0].url }) }}",
+        "options": {}
+      },
+      "id": "wf02-crawl",
+      "name": "Crawl page (Crawl4AI placeholder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT upsert_surface(:clientCode, :surfaceType, :platform, NULL, :url, :ownerEntity, 'MANUAL_REQUIRED', NULL, :importKey) AS surface_id",
+        "options": {}
+      },
+      "id": "wf02-upsert-surface",
+      "name": "Upsert Surface",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1100, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT upsert_surface_resource(:clientCode, :surfaceImportKey, :resourceType, :url, :externalId, :title, NULL, :content, :resourceImportKey) AS resource_id",
+        "options": {}
+      },
+      "id": "wf02-upsert-resource",
+      "name": "Upsert Surface Resource",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1320, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT record_public_evidence(:clientCode, :resourceImportKey, :evidenceType, :excerpt, 0.9, :evidenceImportKey) AS evidence_id",
+        "options": {}
+      },
+      "id": "wf02-record-evidence",
+      "name": "Record public evidence",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1540, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [{ "node": "Load target entities", "type": "main", "index": 0 }]
+      ]
+    },
+    "Load target entities": {
+      "main": [
+        [{ "node": "SearXNG search", "type": "main", "index": 0 }]
+      ]
+    },
+    "SearXNG search": {
+      "main": [
+        [{ "node": "Build classify prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build classify prompt": {
+      "main": [
+        [{ "node": "Call Ollama (classify)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call Ollama (classify)": {
+      "main": [
+        [{ "node": "Parse candidates", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse candidates": {
+      "main": [
+        [{ "node": "Crawl page (Crawl4AI placeholder)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Crawl page (Crawl4AI placeholder)": {
+      "main": [
+        [{ "node": "Upsert Surface", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upsert Surface": {
+      "main": [
+        [{ "node": "Upsert Surface Resource", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upsert Surface Resource": {
+      "main": [
+        [{ "node": "Record public evidence", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

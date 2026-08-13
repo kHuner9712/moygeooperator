@@ -1,0 +1,242 @@
+{
+  "name": "WF-06 Content Factory",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wf06-content",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wf06-trigger",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "wf06-content-factory"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.code AS client_code, j.id AS job_id, j.client_id, j.unique_key, j.payload_json, j.priority\nFROM claim_next_job('wf06', 900, 'CONTENT_FACTORY') j\nLEFT JOIN clients c ON c.id = j.client_id",
+        "options": {}
+      },
+      "id": "wf06-claim",
+      "name": "Claim due content job",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [220, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// WF-06 entry. Resolve the CONTENT_CREATION action + intent from the job\n// payload ({ action_id, intent_id }). Graceful stop when no job is claimed.\nconst j = $json;\nif (!j.job_id) return { json: { skipped: true } };\nconst payload = (typeof j.payload_json === 'string' ? JSON.parse(j.payload_json) : j.payload_json) || {};\nreturn {\n  json: {\n    hasJob: true,\n    clientCode: j.client_code,\n    jobId: j.job_id,\n    actionId: payload.action_id || null,\n    intentId: payload.intent_id || null\n  }\n};\n"
+      },
+      "id": "wf06-entry",
+      "name": "Resolve scope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "wf06-cond-job",
+              "leftValue": "={{ $json.hasJob }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf06-hasjob",
+      "name": "Has job?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT create_content_brief(:clientCode, :actionId::uuid) AS brief_id",
+        "options": {}
+      },
+      "id": "wf06-brief",
+      "name": "Create content brief",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [880, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT b.id AS brief_id, b.canonical_angle,\n       COALESCE(jsonb_agg(jsonb_build_object('field_key', cl.field_key,\n          'claim_text', cl.claim_text)) FILTER (WHERE cl.id IS NOT NULL),\n          '[]'::jsonb) AS verified_claims,\n       e.canonical_name AS entity_name\nFROM content_briefs b\nLEFT JOIN intents i ON i.id = b.intent_id\nLEFT JOIN entities e ON e.id = b.target_entity_id\nLEFT JOIN claims cl ON cl.entity_id = b.target_entity_id\n      AND cl.id = ANY(ARRAY(SELECT jsonb_array_elements_text(b.required_claim_ids)::uuid))\n      AND cl.verification = 'VERIFIED'\nWHERE b.id = :briefId::uuid\nGROUP BY b.id, b.canonical_angle, e.canonical_name",
+        "options": {}
+      },
+      "id": "wf06-load",
+      "name": "Load brief + VERIFIED claims",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1320, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a generation prompt that sources ONLY the brief's VERIFIED claims.\n// The LLM is allowed to restructure language, never to invent new facts.\nconst ctx = $json;\nconst claims = Array.isArray(ctx.verified_claims) ? ctx.verified_claims : [];\nconst factList = claims.map(c => '- ' + (c.field_key || '') + ': ' + (c.claim_text || '')).join('\\n');\nconst prompt =\n  'You are a GEO content writer. Write canonical, fact-accurate marketing copy for the entity \"'\n  + (ctx.entity_name || '') + '\".\\n' +\n  'Use ONLY the following VERIFIED facts. Do NOT add, infer, or repeat any fact not listed.\\n\\n' +\n  'VERIFIED FACTS:\\n' + (factList || '(none)') + '\\n\\n' +\n  'Angle: ' + (ctx.canonical_angle || '') + '\\n\\n' +\n  'Produce a concise, publication-ready draft (title + body).';\nreturn { json: { prompt: prompt, claimCount: claims.length } };\n"
+      },
+      "id": "wf06-build-prompt",
+      "name": "Build generation prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/generate",
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5'), prompt: $json.prompt, stream: false, options: { temperature: 0.3 } }) }}",
+        "options": {}
+      },
+      "id": "wf06-ollama",
+      "name": "Call Ollama (content generation)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the LLM draft and metadata for storage. The stored asset still goes\n// through Fact QA in the DB (store_content_asset) 鈥?LLM output never bypasses it.\nconst raw = $json.response;\nlet body = '';\nif (typeof raw === 'string') { try { body = JSON.parse(raw).response || raw; } catch (e) { body = raw; } }\nelse if (raw && raw.response) body = raw.response;\nconst brief = $node['Load brief + VERIFIED claims'].json;\nconst entry = $node['Resolve scope'].json;\nreturn {\n  json: {\n    clientCode: entry.clientCode,\n    briefId: brief.brief_id,\n    title: brief.canonical_angle || 'Canonical content',\n    body: String(body).trim(),\n    model: $json.model || 'qwen2.5',\n    tokensIn: $json.prompt_eval_count || null,\n    tokensOut: $json.eval_count || null,\n    latencyMs: ($json.total_duration ? Math.round($json.total_duration / 1000000) : null)\n  }\n};\n"
+      },
+      "id": "wf06-parse",
+      "name": "Parse LLM draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT store_content_asset(:clientCode, :briefId::uuid, NULL, 'MARKDOWN',\n  :title, :body, :model, :tokensIn, :tokensOut, :latencyMs) AS asset_id",
+        "options": {}
+      },
+      "id": "wf06-store",
+      "name": "Store VERIFIED content asset",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [2200, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT finish_job(:jobId::uuid)",
+        "options": {}
+      },
+      "id": "wf06-finish",
+      "name": "Finish job",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [2420, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// No due content job claimed 鈥?end cleanly.\nreturn { json: { skipped: true } };\n"
+      },
+      "id": "wf06-noop",
+      "name": "No-op (no job)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 200]
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [{ "node": "Claim due content job", "type": "main", "index": 0 }]
+      ]
+    },
+    "Claim due content job": {
+      "main": [
+        [{ "node": "Resolve scope", "type": "main", "index": 0 }]
+      ]
+    },
+    "Resolve scope": {
+      "main": [
+        [{ "node": "Has job?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Has job?": {
+      "main": [
+        [{ "node": "Create content brief", "type": "main", "index": 0 }],
+        [{ "node": "No-op (no job)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create content brief": {
+      "main": [
+        [{ "node": "Load brief + VERIFIED claims", "type": "main", "index": 0 }]
+      ]
+    },
+    "Load brief + VERIFIED claims": {
+      "main": [
+        [{ "node": "Build generation prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build generation prompt": {
+      "main": [
+        [{ "node": "Call Ollama (content generation)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call Ollama (content generation)": {
+      "main": [
+        [{ "node": "Parse LLM draft", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse LLM draft": {
+      "main": [
+        [{ "node": "Store VERIFIED content asset", "type": "main", "index": 0 }]
+      ]
+    },
+    "Store VERIFIED content asset": {
+      "main": [
+        [{ "node": "Finish job", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
