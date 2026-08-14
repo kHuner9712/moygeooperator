@@ -50,6 +50,9 @@ jobs:
           if [ -n "$bad" ]; then echo "raw mentioned=CORRECT factuality in: $bad"; exit 1; fi
           echo "scan clean"
 
+      - name: Workflow contract static check (LEVEL 0)
+        run: python3 scripts/deploy/static-contract-check.py n8n/workflows
+
       - name: Apply migrations on clean PostgreSQL (P0.12 / LEVEL 2)
         run: |
           for f in db/migrations/[0-9]*.sql; do

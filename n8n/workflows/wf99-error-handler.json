@@ -1,0 +1,61 @@
+{
+  "name": "WF-99 Shared Error Handler (fail_job)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "wf99-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// P0.8 — shared worker error path. When any workflow execution fails, this\n// handler is invoked by n8n's error trigger. It tries to recover the job_id from\n// the failed execution's data and, if found, calls fail_job() so the job never\n// stays RUNNING forever. If no job_id can be recovered, it emits zero items\n// (graceful no-op — the DB lease/max_attempts recovery is the secondary net).\nconst err = $json || {};\nconst execution = err.execution || {};\nconst failed = execution.lastNodeExecuted || '';\n\n// job_id is usually carried in the failed node's item or in the run data.\nlet jobId = null;\nfunction findJobId(o, depth) {\n  if (!o || typeof o !== 'object' || depth > 6) return null;\n  if (o.job_id) return o.job_id;\n  if (o.jobId) return o.jobId;\n  for (const k of Object.keys(o)) {\n    if (Array.isArray(o[k])) {\n      for (const it of o[k]) { const r = findJobId(it, depth + 1); if (r) return r; }\n    } else if (o[k] && typeof o[k] === 'object') {\n      const r = findJobId(o[k], depth + 1); if (r) return r;\n    }\n  }\n  return null;\n}\njobId = findJobId(err, 0);\nif (!jobId) return [];\n\nconst errorText = String((err.error && err.error.message) || err.error || 'workflow execution failed');\nreturn [{ json: { jobId: jobId, error: 'WORKFLOW_ERROR:' + failed + ' -> ' + errorText.slice(0, 500) } }];\n"
+      },
+      "id": "wf99-recover",
+      "name": "Recover job_id from error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT fail_job($1::uuid, $2)",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "jobId,error"
+        },
+        "options": {}
+      },
+      "id": "wf99-fail",
+      "name": "fail_job",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [440, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [{ "node": "Recover job_id from error", "type": "main", "index": 0 }]
+      ]
+    },
+    "Recover job_id from error": {
+      "main": [
+        [{ "node": "fail_job", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -50,13 +50,19 @@ BEGIN
   IF v_exceptions <> 3 THEN
     RAISE EXCEPTION 'FAIL CLIENT_DATA_REQUIRED expected 3 got %', v_exceptions; END IF;
 
-  -- 4. Priority is inherited from the intent's priority_score.
-  SELECT a.priority INTO v_priority FROM geo_actions a
+  -- 4. Priority is inherited from the intent's priority_score (0-100 weighted,
+  --    migration 012). Purchase = commercial 95 / relevance 85 / opportunity 75
+  --    -> 0.35*95 + 0.40*85 + 0.25*75 = 86.0. Assert inheritance from the intent
+  --    rather than a legacy 0-255 hardcode.
+  SELECT a.priority, i.priority_score INTO v_priority, v_other
+    FROM geo_actions a
     JOIN intents i ON i.id=a.target_intent_id
     WHERE a.client_id=v_cid AND i.label='采购精密气缸供应商'
     LIMIT 1;
-  IF v_priority IS DISTINCT FROM 255 THEN
-    RAISE EXCEPTION 'FAIL purchase action priority expected 255 got %', v_priority; END IF;
+  IF v_priority IS DISTINCT FROM 86 THEN
+    RAISE EXCEPTION 'FAIL purchase action priority expected 86 got %', v_priority; END IF;
+  IF v_priority IS DISTINCT FROM v_other THEN
+    RAISE EXCEPTION 'FAIL action priority % does not inherit intent priority %', v_priority, v_other; END IF;
 
   -- 5. Idempotency: re-running analysis/planning creates nothing new.
   SELECT analyze_gaps('SYNTH-ACME') INTO v_dup;

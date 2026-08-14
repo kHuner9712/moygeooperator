@@ -47,14 +47,20 @@ BEGIN
     -- enter the publication queue. Synthetic content built from VERIFIED
     -- claims passes; a hallucinated asset would be BLOCKED here.
     PERFORM approve_content_asset(v_asset);
-    -- Surface adaptation: one variant per active owned surface.
+    -- Surface adaptation: one variant per active owned surface. P0.10: the
+    -- adapted copy is a fresh DRAFT with PENDING gates (client-aware 4-arg
+    -- overload), so we re-run approve_content_asset on each variant exactly
+    -- as WF-06 does — the base's publication-ready status is never inherited.
     FOR v_surface IN
       SELECT s.id FROM surfaces s
       WHERE s.client_id = (SELECT id FROM clients WHERE code='SYNTH-ACME')
         AND s.owner_entity_id = (SELECT target_entity_id FROM content_briefs WHERE id=v_brief)
         AND s.active
     LOOP
-      PERFORM adapt_content_for_surface(v_asset, v_surface, 'POST');
+      v_asset := adapt_content_for_surface('SYNTH-ACME', v_asset, v_surface, 'POST');
+      IF v_asset IS NOT NULL THEN
+        PERFORM approve_content_asset(v_asset);
+      END IF;
     END LOOP;
   END LOOP;
 END;

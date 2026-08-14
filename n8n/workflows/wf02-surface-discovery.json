@@ -18,15 +18,51 @@
     },
     {
       "parameters": {
+        "jsCode": "// P0.3 — resolve the runtime client scope FIRST. The supervised webhook POST\n// body arrives under $json.body in n8n; fall back to direct fields. Emits both\n// clientId and clientCode (empty string when not supplied); the downstream\n// 'Resolve client' node fills the missing one from the clients table.\nconst src = ($json && $json.body && typeof $json.body === 'object') ? $json.body : $json;\nconst clientId = (src && src.clientId) ? String(src.clientId) : '';\nconst clientCode = (src && src.clientCode) ? String(src.clientCode) : '';\nreturn { json: { clientId: clientId, clientCode: clientCode } };\n"
+      },
+      "id": "wf02-scope",
+      "name": "Resolve client scope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT e.canonical_name, e.aliases, e.entity_type\nFROM entities e\nWHERE e.client_id = :clientId::uuid AND e.status = 'ACTIVE'\nORDER BY e.entity_type",
+        "query": "SELECT id::text AS \"clientId\", code AS \"clientCode\"\nFROM clients\nWHERE ($1 <> '' AND id = NULLIF($1, '')::uuid)\n   OR ($2 <> '' AND code = $2)\nLIMIT 1",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientId,clientCode"
+        },
+        "options": {}
+      },
+      "id": "wf02-resolve-client",
+      "name": "Resolve client",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [330, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT e.canonical_name, e.aliases, e.entity_type\nFROM entities e\nWHERE e.client_id = $1::uuid AND e.status = 'ACTIVE'\nORDER BY e.entity_type",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientId"
+        },
         "options": {}
       },
       "id": "wf02-load-entities",
       "name": "Load target entities",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [220, 0],
+      "position": [440, 0],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -52,17 +88,17 @@
       "name": "SearXNG search",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, 0]
+      "position": [660, 0]
     },
     {
       "parameters": {
-        "jsCode": "// Build a candidate-classification prompt from the SearXNG results, handed to\n// Ollama. 杈撳叆: $json = SearXNG JSON (results[]).\n// 杈撳嚭: { prompt } 鍗曟潯銆備粎淇濈暀灞炰簬鐩爣浼佷笟鐨勬寮?surface锛岃垗鍘昏鎶ャ€俓nconst results = Array.isArray($json.results) ? $json.results : [];\nconst items = results.map(r => '- ' + (r.url || '') + ' | ' + (r.title || '')).join('\\n');\nconst prompt =\n  'You classify web search results for a GEO target company (B2B precision ' +\n  'manufacturer). Keep ONLY URLs that are official/authoritative surfaces of ' +\n  'that company: its own website, knowledge-page entries, B2B listings, or ' +\n  'map listings. Drop ads, SEO spam, forums, news aggregators, and unrelated pages.\\n' +\n  'Return STRICT JSON only: {\"candidates\":[{\"url\",\"surface_type\",\"platform\"}]}\\n' +\n  'surface_type one of: WEBSITE, KNOWLEDGE_PAGE, B2B_LISTING, MAP_LISTING, SOCIAL.\\n' +\n  'platform one of: OFFICIAL_SITE, WIKIPEDIA, BAIDU_BAIKE, ALIBABA_1688, AMAP, LINKEDIN.\\n\\n' +\n  'RESULTS:\\n' + (items || '(none)') + '\\n\\nJSON: ';\nreturn { json: { prompt: prompt } };\n"
+        "jsCode": "// Build a candidate-classification prompt from the SearXNG results.\nconst entity = $node['Load target entities'].json || {};\nconst entityName = entity.canonical_name || '';\nconst results = Array.isArray($json.results) ? $json.results : [];\nconst items = results.map(r => '- ' + (r.url || '') + ' | ' + (r.title || '')).join('\\n');\nconst prompt =\n  'You classify web search results for a GEO target company (B2B precision ' +\n  'manufacturer). Keep ONLY URLs that are official/authoritative surfaces of ' +\n  'that company: its own website, knowledge-page entries, B2B listings, or ' +\n  'map listings. Drop ads, SEO spam, forums, news aggregators, and unrelated pages.\\n' +\n  'Return STRICT JSON only: {\"candidates\":[{\"url\",\"surface_type\",\"platform\"}]}\\n' +\n  'surface_type one of: WEBSITE, KNOWLEDGE_PAGE, B2B_LISTING, MAP_LISTING, SOCIAL.\\n' +\n  'platform one of: OFFICIAL_SITE, WIKIPEDIA, BAIDU_BAIKE, ALIBABA_1688, AMAP, LINKEDIN.\\n\\n' +\n  'RESULTS:\\n' + (items || '(none)') + '\\n\\nJSON: ';\nreturn { json: { prompt: prompt, entityName: entityName } };\n"
       },
       "id": "wf02-build-prompt",
       "name": "Build classify prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 0]
+      "position": [880, 0]
     },
     {
       "parameters": {
@@ -76,43 +112,57 @@
       "name": "Call Ollama (classify)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 0]
+      "position": [1100, 0]
     },
     {
       "parameters": {
-        "jsCode": "// Parse the Ollama JSON response into a candidate list. A non-JSON or empty\n// reply yields an empty list (fail closed 鈥?no false-positive surfaces).\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\nconst candidates = Array.isArray(data.candidates) ? data.candidates : [];\nreturn { json: { candidates: candidates } };\n"
+        "jsCode": "// P0.4 — emit ONE item per classified candidate (not just candidates[0]) so the\n// downstream crawl/upsert/evidence nodes run independently per candidate.\n// MAX_SURFACE_CANDIDATES caps how many pages a single run may touch.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst entityName = $node['Build classify prompt'].json.entityName || '';\nconst MAX = Math.max(1, parseInt($env.MAX_SURFACE_CANDIDATES || '15', 10));\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\nconst candidates = Array.isArray(data.candidates) ? data.candidates : [];\nconst seen = {};\nconst out = [];\nfor (const c of candidates) {\n  if (!c || typeof c !== 'object' || !c.url) continue;\n  const url = String(c.url).trim();\n  if (!url || seen[url]) continue;   // dedupe URL\n  seen[url] = true;\n  if (out.length >= MAX) break;      // MAX_SURFACE_CANDIDATES cap\n  out.push({\n    clientCode: clientCode,\n    entityName: entityName,\n    url: url,\n    surfaceType: c.surface_type || 'WEBSITE',\n    platform: c.platform || 'OFFICIAL_SITE',\n    importKey: 'surf:' + clientCode + ':' + url.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 80),\n    resourceImportKey: 'res:' + clientCode + ':' + url.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 80)\n  });\n}\nreturn out;\n"
       },
       "id": "wf02-parse",
       "name": "Parse candidates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 0]
+      "position": [1320, 0]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "http://crawl4ai:8000/crawl",
         "sendBody": true,
-        "jsonBody": "={{ JSON.stringify({ url: $json.candidates[0].url }) }}",
+        "jsonBody": "={{ JSON.stringify({ url: $json.url }) }}",
         "options": {}
       },
       "id": "wf02-crawl",
       "name": "Crawl page (Crawl4AI)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 0]
+      "position": [1540, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// P0.3 — the Crawl4AI HTTP node output carries only the crawled page content,\n// losing the candidate metadata emitted by 'Parse candidates'. Re-attach the\n// candidate context by index: Crawl page runs once per candidate, preserving\n// order. content is captured from common Crawl4AI response shapes.\nconst list = $('Parse candidates').all().map(function(it){ return it.json; });\nconst idx = (typeof $input.itemIndex === 'number') ? $input.itemIndex : 0;\nconst cand = list[idx] || {};\nconst res = $json || {};\nconst inner = (res && typeof res === 'object' && res.result && typeof res.result === 'object') ? res.result : res;\nconst content = inner.markdown || inner.content || inner.text || res.markdown || res.content || res.text || '';\nconst out = Object.assign({}, cand);\nout.content = String(content);\nreturn { json: out };\n"
+      },
+      "id": "wf02-merge-crawl",
+      "name": "Merge crawl context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 0]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT upsert_surface(:clientCode, :surfaceType, :platform, NULL, :url, :ownerEntity, 'MANUAL_REQUIRED', NULL, :importKey) AS surface_id",
+        "query": "SELECT upsert_surface($1, $2, $3, NULL, $4,\n  $5, 'MANUAL_REQUIRED', NULL, $6) AS surface_id",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientCode,surfaceType,platform,url,entityName,importKey"
+        },
         "options": {}
       },
       "id": "wf02-upsert-surface",
       "name": "Upsert Surface",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1100, 0],
+      "position": [1760, 0],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -122,15 +172,29 @@
     },
     {
       "parameters": {
+        "jsCode": "// Re-attach the candidate context onto the upsert result (the postgres node\n// output only carries surface_id). Pair by index: Upsert Surface runs once per\n// merged-crawl item and always returns one row, preserving order.\nconst res = $json || {};\nconst list = $('Merge crawl context').all().map(function(it){ return it.json; });\nconst idx = (typeof $input.itemIndex === 'number') ? $input.itemIndex : 0;\nconst cand = list[idx] || {};\nconst out = Object.assign({}, cand);\nout.surface_id = res.surface_id;\nreturn { json: out };\n"
+      },
+      "id": "wf02-merge-surface",
+      "name": "Merge surface context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1870, 0]
+    },
+    {
+      "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT upsert_surface_resource(:clientCode, :surfaceImportKey, :resourceType, :url, :externalId, :title, NULL, :content, :resourceImportKey) AS resource_id",
+        "query": "SELECT upsert_surface_resource($1, $2, 'PAGE', $3, NULL,\n  NULL, NULL, $4, $5) AS resource_id",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientCode,importKey,url,content,resourceImportKey"
+        },
         "options": {}
       },
       "id": "wf02-upsert-resource",
       "name": "Upsert Surface Resource",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1320, 0],
+      "position": [1980, 0],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -140,15 +204,29 @@
     },
     {
       "parameters": {
+        "jsCode": "// Re-attach context after the resource upsert and derive the evidence inputs\n// (excerpt + evidenceImportKey) that record_public_evidence needs.\nconst res = $json || {};\nconst list = $('Merge surface context').all().map(function(it){ return it.json; });\nconst idx = (typeof $input.itemIndex === 'number') ? $input.itemIndex : 0;\nconst cand = list[idx] || {};\nconst out = Object.assign({}, cand);\nout.resource_id = res.resource_id;\nout.excerpt = String(cand.content || '').slice(0, 500);\nout.evidenceImportKey = 'evid:' + (cand.clientCode || '') + ':' + (cand.resourceImportKey || '');\nreturn { json: out };\n"
+      },
+      "id": "wf02-merge-resource",
+      "name": "Merge resource context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2090, 0]
+    },
+    {
+      "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT record_public_evidence(:clientCode, :resourceImportKey, :evidenceType, :excerpt, 0.9, :evidenceImportKey) AS evidence_id",
+        "query": "SELECT record_public_evidence($1, $2, 'SURFACE_PRESENCE',\n  $3, 0.9, $4) AS evidence_id",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientCode,resourceImportKey,excerpt,evidenceImportKey"
+        },
         "options": {}
       },
       "id": "wf02-record-evidence",
       "name": "Record public evidence",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1540, 0],
+      "position": [2200, 0],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -159,6 +237,16 @@
   ],
   "connections": {
     "Trigger": {
+      "main": [
+        [{ "node": "Resolve client scope", "type": "main", "index": 0 }]
+      ]
+    },
+    "Resolve client scope": {
+      "main": [
+        [{ "node": "Resolve client", "type": "main", "index": 0 }]
+      ]
+    },
+    "Resolve client": {
       "main": [
         [{ "node": "Load target entities", "type": "main", "index": 0 }]
       ]
@@ -190,15 +278,30 @@
     },
     "Crawl page (Crawl4AI)": {
       "main": [
+        [{ "node": "Merge crawl context", "type": "main", "index": 0 }]
+      ]
+    },
+    "Merge crawl context": {
+      "main": [
         [{ "node": "Upsert Surface", "type": "main", "index": 0 }]
       ]
     },
     "Upsert Surface": {
       "main": [
+        [{ "node": "Merge surface context", "type": "main", "index": 0 }]
+      ]
+    },
+    "Merge surface context": {
+      "main": [
         [{ "node": "Upsert Surface Resource", "type": "main", "index": 0 }]
       ]
     },
     "Upsert Surface Resource": {
+      "main": [
+        [{ "node": "Merge resource context", "type": "main", "index": 0 }]
+      ]
+    },
+    "Merge resource context": {
       "main": [
         [{ "node": "Record public evidence", "type": "main", "index": 0 }]
       ]

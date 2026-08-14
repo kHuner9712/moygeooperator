@@ -47,36 +47,45 @@ BEGIN
     WHERE provider='SYNTH-LOCAL' AND product='Qwen2.5' AND mode='chat';
   IF v_engines <> 1 THEN RAISE EXCEPTION 'FAIL upsert_engine created duplicate'; END IF;
 
-  -- 2. Observations recorded across API + MANUAL kinds.
+  -- 2. Observations recorded across API + MANUAL kinds. (The retest seed adds
+  --    2 more API observations, so assert at-least-3 and the kind split on the
+  --    engine seed's own keys rather than an absolute total.)
   SELECT count(*) INTO v_obs FROM engine_observations WHERE client_id=v_cid;
-  IF v_obs <> 3 THEN RAISE EXCEPTION 'FAIL observations expected 3 got %', v_obs; END IF;
+  IF v_obs < 3 THEN RAISE EXCEPTION 'FAIL observations expected >=3 got %', v_obs; END IF;
 
   SELECT count(*) INTO v_api FROM engine_observations
-    WHERE client_id=v_cid AND observation_kind='API_OBSERVATION';
+    WHERE client_id=v_cid AND observation_kind='API_OBSERVATION'
+      AND run_key IN ('SYNTH-OBS-0001','SYNTH-OBS-0002');
   SELECT count(*) INTO v_manual FROM engine_observations
-    WHERE client_id=v_cid AND observation_kind='MANUAL_OBSERVATION';
+    WHERE client_id=v_cid AND observation_kind='MANUAL_OBSERVATION'
+      AND run_key='SYNTH-OBS-0003';
   IF v_api <> 2 OR v_manual <> 1 THEN
     RAISE EXCEPTION 'FAIL kind split expected 2 API + 1 MANUAL got % API + % MANUAL', v_api, v_manual; END IF;
 
-  -- 3. Mentioned / recommended signals captured.
+  -- 3. Mentioned / recommended signals captured (on the engine seed's own keys).
   SELECT count(*) INTO v_mentioned FROM engine_observations
-    WHERE client_id=v_cid AND target_mentioned;
+    WHERE client_id=v_cid AND target_mentioned
+      AND run_key IN ('SYNTH-OBS-0001','SYNTH-OBS-0002','SYNTH-OBS-0003');
   SELECT count(*) INTO v_recommended FROM engine_observations
-    WHERE client_id=v_cid AND target_recommended;
+    WHERE client_id=v_cid AND target_recommended
+      AND run_key IN ('SYNTH-OBS-0001','SYNTH-OBS-0002','SYNTH-OBS-0003');
   IF v_mentioned <> 2 OR v_recommended <> 2 THEN
     RAISE EXCEPTION 'FAIL mentioned=% recommended=% expected 2/2', v_mentioned, v_recommended; END IF;
 
-  -- 4. Idempotent re-insert of an existing run_key must NOT add a row.
+  -- 4. Idempotent re-insert of an existing run_key must NOT add a new row.
+  --    (The 19-arg overload is an upsert: it returns the EXISTING observation's
+  --    id on conflict and must not create a duplicate.)
   SELECT query_id INTO v_qid FROM engine_observations
     WHERE client_id=v_cid AND run_key='SYNTH-OBS-0001' LIMIT 1;
   SELECT record_observation('SYNTH-ACME', v_eng_search, v_qid,
     'API_OBSERVATION', now() - interval '3 days', 'SYNTH-OBS-0001',
     'dup', true, true, 1, 'CORRECT', '[]'::jsonb, '[]'::jsonb,
-    NULL, NULL, NULL, NULL, '{}'::jsonb) INTO v_uuid;
-  IF v_uuid IS NOT NULL THEN
-    RAISE EXCEPTION 'FAIL record_observation should be idempotent (returned id)'; END IF;
+    NULL, NULL, NULL, NULL, '{}'::jsonb, NULL) INTO v_uuid;
   SELECT count(*) INTO v_obs_after FROM engine_observations WHERE client_id=v_cid;
-  IF v_obs_after <> 3 THEN RAISE EXCEPTION 'FAIL idempotency broken: % rows', v_obs_after; END IF;
+  IF v_obs_after <> v_obs THEN RAISE EXCEPTION 'FAIL idempotency broken: % rows', v_obs_after; END IF;
+  IF v_uuid <> (SELECT id FROM engine_observations
+                WHERE client_id=v_cid AND run_key='SYNTH-OBS-0001' LIMIT 1) THEN
+    RAISE EXCEPTION 'FAIL idempotent re-insert returned a different id'; END IF;
 
   -- 5. Surface profile aggregation: time/region/language-bound, evidence-counted.
   SELECT count(*) INTO v_profiles FROM engine_surface_profiles
