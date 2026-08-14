@@ -1,0 +1,19 @@
+{
+  "commit": "947c826f6c6a1e3cdd1e7701e76dd368e224a641",
+  "run_id": "20260815021345",
+  "tenant": "N8N-E2E-A",
+  "verdict": "SHADOW_RUN_READY",
+  "started_at": "2026-08-14T18:20:57Z",
+  "wf01": {"execution_id": "298", "status": "success", "entities_created": 5, "claims_created": 5, "evidence_created": 5},
+  "wf02": {"execution_id": "299", "surfaces_created": 1},
+  "wf03": {"execution_id": "300", "intents_created": 1, "queries_created": 3},
+  "wf04": {"execution_id": "301", "observations_created": 1},
+  "wf05": {"execution_id": "302", "gaps_created": 1, "actions_created": 1},
+  "wf06": {"execution_id": "303", "canonical_assets": 1, "adapted_assets": 1, "publication_jobs": 1},
+  "wf07": {"execution_id": "304", "waiting_approval": 1, "publication_records": 0},
+  "wf08": {"execution_id": "305", "reports_created": 1},
+  "error_path": {"worker_execution_id": "306", "wf99_execution_id": "307", "status": "PASS"},
+  "tenant_isolation": {"status": "PASS", "cross_job_status": "RETRY_WAIT"},
+  "retry_exhaustion": {"attempts": 3, "final_status": "FAILED", "status": "PASS"},
+  "stages": [{"name":"L0_stack_sanity","ok":true},{"name":"L1_clean_db","ok":true},{"name":"L2_db_reproducible","ok":true},{"name":"L3_seeds","ok":true},{"name":"L3_tenant_a","ok":true},{"name":"L4_import","ok":true},{"name":"L4_import_count","ok":true},{"name":"L5_wf99_binding","ok":true},{"name":"L6_activate","ok":true},{"name":"L6_n8n_healthy","ok":true},{"name":"L7_zero_state","ok":true},{"name":"L9_wf01_business (claims=5 entities=5 evidence=5 orphan=0)","ok":true},{"name":"L11_wf02_business (surfaces=1 resources=1 evidence=1)","ok":true},{"name":"L13_wf03_business (intents=1 queries=3 obsjobs=3 payload_ok=3)","ok":true},{"name":"L15_wf04_business (obs=1 lineage_ok=1)","ok":true},{"name":"L17_wf05_business (gaps=1 actions=1 content_jobs=1)","ok":true},{"name":"L19_wf06_business (canonical=1 adapted=1 tasks=1 pubjobs=1)","ok":true},{"name":"L21_wf07_business (waiting=1 records=0 ext_or_published=0)","ok":true},{"name":"L23_wf08_business (reports=1 obs_metric=1)","ok":true},{"name":"L24_fault_path (wf04=306 wf99=307 job=RETRY_WAIT attempts=1)","ok":true},{"name":"L25_cross_client (job=RETRY_WAIT b_task=DRAFT exc=1)","ok":true},{"name":"L26_retry_exhaustion (attempts=3 status=FAILED)","ok":true} ]
+}

@@ -13,7 +13,10 @@
       "name": "Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "wf02-surface-discovery"
     },
     {
@@ -24,7 +27,10 @@
       "name": "Resolve client scope",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 0]
+      "position": [
+        220,
+        0
+      ]
     },
     {
       "parameters": {
@@ -40,7 +46,10 @@
       "name": "Resolve client",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [330, 0],
+      "position": [
+        330,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -51,7 +60,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT e.client_id::text AS \"clientId\", e.canonical_name, e.aliases, e.entity_type\nFROM entities e\nWHERE e.client_id = $1::uuid AND e.status = 'ACTIVE'\nORDER BY e.entity_type",
+        "query": "SELECT e.client_id::text AS \"clientId\", e.canonical_name, e.aliases, e.entity_type\nFROM entities e\nWHERE e.client_id = $1::uuid AND e.status = 'ACTIVE'\nORDER BY CASE WHEN e.entity_type = 'ORGANIZATION' THEN 0 ELSE 1 END, e.entity_type",
         "additionalFields": {
           "mode": "independently",
           "queryParams": "clientId"
@@ -62,7 +71,10 @@
       "name": "Load target entities",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [440, 0],
+      "position": [
+        440,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -84,7 +96,10 @@
       "name": "Load classify context",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [550, 0],
+      "position": [
+        550,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -95,13 +110,22 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "http://searxng:8080/search",
+        "url": "={{ $env.SEARCH_BASE_URL || 'http://searxng:8080' }}/search",
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "q", "value": "={{ $json.canonical_name }}" },
-            { "name": "format", "value": "json" },
-            { "name": "language", "value": "zh-CN" }
+            {
+              "name": "q",
+              "value": "={{ $json.canonical_name }}"
+            },
+            {
+              "name": "format",
+              "value": "json"
+            },
+            {
+              "name": "language",
+              "value": "zh-CN"
+            }
           ]
         },
         "options": {}
@@ -110,55 +134,72 @@
       "name": "SearXNG search",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [660, 0]
+      "position": [
+        660,
+        0
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// P0.13 — Build the candidate-classification prompt from the entity + client\n// context loaded at runtime. NO industry/business-model is hard-coded: the\n// prompt is grounded in the entity's real type and the client's verified\n// claims / region / target markets. If that context is missing the prompt\n// instructs the model not to assume any industry or business model.\nconst ctx = $node['Load classify context'].json || {};\nconst entityName = ctx.canonical_name || '';\nconst entityType = ctx.entity_type || '';\nconst region = ctx.primary_region || '';\nconst language = ctx.primary_language || '';\nconst markets = ctx.target_markets || '';\nconst claims = ctx.verified_claims || '';\nconst contextBlock =\n  'entity_type=' + entityType + '\\n' +\n  'primary_region=' + region + '\\n' +\n  'primary_language=' + language + '\\n' +\n  'target_markets=' + markets + '\\n' +\n  'verified_claims: ' + (claims || '(none)') + '\\n';\nconst results = Array.isArray($json.results) ? $json.results : [];\nconst items = results.map(r => '- ' + (r.url || '') + ' | ' + (r.title || '')).join('\\n');\nconst prompt =\n  'You are performing GEO discovery for this entity.\\n' +\n  'Use ONLY the supplied verified context. Do not assume an industry or ' +\n  'business model not present in the context.\\n\\n' +\n  'VERIFIED CONTEXT:\\n' + contextBlock +\n  '\\nClassify the web search results for the entity above. Keep ONLY URLs that ' +\n  'are official/authoritative surfaces of that entity: its own website, ' +\n  'knowledge-page entries, B2B listings, or map listings. Drop ads, SEO spam, ' +\n  'forums, news aggregators, and unrelated pages.\\n' +\n  'Return STRICT JSON only: {\"candidates\":[{\"url\",\"surface_type\",\"platform\"}]}\\n' +\n  'surface_type one of: WEBSITE, KNOWLEDGE_PAGE, B2B_LISTING, MAP_LISTING, SOCIAL.\\n' +\n  'platform one of: OFFICIAL_SITE, WIKIPEDIA, BAIDU_BAIKE, ALIBABA_1688, AMAP, LINKEDIN.\\n\\n' +\n  'RESULTS:\\n' + (items || '(none)') + '\\n\\nJSON: ';\nreturn { json: { prompt: prompt, entityName: entityName } };\n"
+        "jsCode": "// P0.13 — Build the candidate-classification prompt from the entity + client\n// context loaded at runtime. NO industry/business-model is hard-coded: the\n// prompt is grounded in the entity's real type and the client's verified\n// claims / region / target markets. If that context is missing the prompt\n// instructs the model not to assume any industry or business model.\nconst ctx = $node['Load classify context'].json || {};\nconst entityName = ctx.canonical_name || '';\nconst entityType = ctx.entity_type || '';\nconst region = ctx.primary_region || '';\nconst language = ctx.primary_language || '';\nconst markets = ctx.target_markets || '';\nconst claims = ctx.verified_claims || '';\nconst contextBlock =\n  'entity_type=' + entityType + '\\n' +\n  'primary_region=' + region + '\\n' +\n  'primary_language=' + language + '\\n' +\n  'target_markets=' + markets + '\\n' +\n  'verified_claims: ' + (claims || '(none)') + '\\n';\nconst results = Array.isArray($json.results) ? $json.results : [];\nconst items = results.map(r => '- ' + (r.url || '') + ' | ' + (r.title || '')).join('\\n');\nconst prompt =\n  'You are performing GEO discovery for this entity.\\n' +\n  'Use ONLY the supplied verified context. Do not assume an industry or ' +\n  'business model not present in the context.\\n\\n' +\n  'VERIFIED CONTEXT:\\n' + contextBlock +\n  '\\nClassify the web search results for the entity above. Keep ONLY URLs that ' +\n  'are official/authoritative surfaces of that entity: its own website, ' +\n  'knowledge-page entries, B2B listings, or map listings. Drop ads, SEO spam, ' +\n  'forums, news aggregators, and unrelated pages.\\n' +\n  'Return STRICT JSON only: {\"candidates\":[{\"url\",\"surface_type\",\"platform\"}]}\\n' +\n  'surface_type one of: WEBSITE, KNOWLEDGE_PAGE, B2B_LISTING, MAP_LISTING, SOCIAL.\\n' +\n  'platform one of: OFFICIAL_SITE, WIKIPEDIA, BAIDU_BAIKE, ALIBABA_1688, AMAP, LINKEDIN.\\n\\n' +\n  'RESULTS:\\n' + (items || '(none)') + '\\n\\nJSON: ';\nreturn { json: { prompt: prompt, entityName: entityName, entityType: entityType } };\n"
       },
       "id": "wf02-build-prompt",
       "name": "Build classify prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 0]
+      "position": [
+        880,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "http://ollama:11434/api/generate",
+        "url": "={{ $env.OLLAMA_URL || 'http://ollama:11434' }}/api/generate",
         "sendBody": true,
-        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5'), prompt: $json.prompt, stream: false, format: 'json', options: { temperature: 0.0 } }) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5:3b'), prompt: $json.prompt, stream: false, format: 'json', options: { temperature: 0.0 } }) }}",
+        "options": {},
+        "specifyBody": "json"
       },
       "id": "wf02-ollama",
       "name": "Call Ollama (classify)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 0]
+      "position": [
+        1100,
+        0
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// P0.4 — emit ONE item per classified candidate (not just candidates[0]) so the\n// downstream crawl/upsert/evidence nodes run independently per candidate.\n// MAX_SURFACE_CANDIDATES caps how many pages a single run may touch.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst entityName = $node['Build classify prompt'].json.entityName || '';\nconst MAX = Math.max(1, parseInt($env.MAX_SURFACE_CANDIDATES || '15', 10));\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\nconst candidates = Array.isArray(data.candidates) ? data.candidates : [];\nconst seen = {};\nconst out = [];\nfor (const c of candidates) {\n  if (!c || typeof c !== 'object' || !c.url) continue;\n  const url = String(c.url).trim();\n  if (!url || seen[url]) continue;   // dedupe URL\n  seen[url] = true;\n  if (out.length >= MAX) break;      // MAX_SURFACE_CANDIDATES cap\n  out.push({\n    clientCode: clientCode,\n    entityName: entityName,\n    url: url,\n    surfaceType: c.surface_type || 'WEBSITE',\n    platform: c.platform || 'OFFICIAL_SITE',\n    importKey: 'surf:' + clientCode + ':' + url.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 80),\n    resourceImportKey: 'res:' + clientCode + ':' + url.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 80)\n  });\n}\nreturn out;\n"
+        "jsCode": "// P0.4 — emit ONE item per classified candidate (not just candidates[0]) so the\n// downstream crawl/upsert/evidence nodes run independently per candidate.\n// MAX_SURFACE_CANDIDATES caps how many pages a single run may touch.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst entityName = $node['Build classify prompt'].json.entityName || '';\nconst MAX = Math.max(1, parseInt($env.MAX_SURFACE_CANDIDATES || '15', 10));\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\nconst candidates = Array.isArray(data.candidates) ? data.candidates : [];\nconst seen = {};\nconst out = [];\nfor (const c of candidates) {\n  if (!c || typeof c !== 'object' || !c.url) continue;\n  const url = String(c.url).trim();\n  if (!url || seen[url]) continue;   // dedupe URL\n  seen[url] = true;\n  if (out.length >= MAX) break;      // MAX_SURFACE_CANDIDATES cap\n  out.push({\n    clientCode: clientCode,\n    entityName: entityName,\n    url: url,\n    surfaceType: c.surface_type || 'WEBSITE',\n    platform: c.platform || 'OFFICIAL_SITE',\n    importKey: 'surf:' + clientCode + ':' + url.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 80),\n    resourceImportKey: 'res:' + clientCode + ':' + url.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 80)\n  });\n}\n// OFFICIAL FALLBACK (P0.18): deterministic repair over the SearXNG result set.\n// When the current entity is the ORGANIZATION (causal anchor for WF-03/WF-06)\n// and the model dropped the official site, re-add it so surface.owner_entity_id\n// matches the intent entity and WF-06 can close to publication. Uses only the\n// URL already present in the search results; never invents a fact.\nconst ctx2 = $node['Build classify prompt'].json || {};\nconst isOrg = ctx2.entityType === 'ORGANIZATION';\nif (isOrg) {\n  const sr = $node['SearXNG search'].json || {};\n  const resList = Array.isArray(sr.results) ? sr.results : [];\n  const official = resList.filter(function(r){ return r && r.url && /\\bofficial\\b/i.test(r.title || ''); });\n  for (const o of official) {\n    const ourl = String(o.url).trim();\n    if (!ourl || seen[ourl]) continue;\n    seen[ourl] = true;\n    out.push({\n      clientCode: clientCode,\n      entityName: entityName,\n      url: ourl,\n      surfaceType: 'WEBSITE',\n      platform: 'OFFICIAL_SITE',\n      importKey: 'surf:' + clientCode + ':' + ourl.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 80),\n      resourceImportKey: 'res:' + clientCode + ':' + ourl.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 80)\n    });\n  }\n}\nreturn out;\n"
       },
       "id": "wf02-parse",
       "name": "Parse candidates",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1320, 0]
+      "position": [
+        1320,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "http://crawl4ai:8000/crawl",
+        "url": "={{ $env.CRAWL_BASE_URL || 'http://crawl4ai:8000' }}/crawl",
         "sendBody": true,
         "jsonBody": "={{ JSON.stringify({ url: $json.url }) }}",
-        "options": {}
+        "options": {},
+        "specifyBody": "json"
       },
       "id": "wf02-crawl",
       "name": "Crawl page (Crawl4AI)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1540, 0]
+      "position": [
+        1540,
+        0
+      ]
     },
     {
       "parameters": {
@@ -168,7 +209,10 @@
       "name": "Merge crawl context",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1650, 0]
+      "position": [
+        1650,
+        0
+      ]
     },
     {
       "parameters": {
@@ -184,7 +228,10 @@
       "name": "Upsert Surface",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1760, 0],
+      "position": [
+        1760,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -200,7 +247,10 @@
       "name": "Merge surface context",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1870, 0]
+      "position": [
+        1870,
+        0
+      ]
     },
     {
       "parameters": {
@@ -216,7 +266,10 @@
       "name": "Upsert Surface Resource",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1980, 0],
+      "position": [
+        1980,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -232,7 +285,10 @@
       "name": "Merge resource context",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2090, 0]
+      "position": [
+        2090,
+        0
+      ]
     },
     {
       "parameters": {
@@ -248,7 +304,10 @@
       "name": "Record public evidence",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [2200, 0],
+      "position": [
+        2200,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -260,77 +319,167 @@
   "connections": {
     "Trigger": {
       "main": [
-        [{ "node": "Resolve client scope", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Resolve client scope",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Resolve client scope": {
       "main": [
-        [{ "node": "Resolve client", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Resolve client",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Resolve client": {
       "main": [
-        [{ "node": "Load target entities", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Load target entities",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Load target entities": {
       "main": [
-        [{ "node": "Load classify context", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Load classify context",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Load classify context": {
       "main": [
-        [{ "node": "SearXNG search", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "SearXNG search",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "SearXNG search": {
       "main": [
-        [{ "node": "Build classify prompt", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Build classify prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Build classify prompt": {
       "main": [
-        [{ "node": "Call Ollama (classify)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Call Ollama (classify)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Call Ollama (classify)": {
       "main": [
-        [{ "node": "Parse candidates", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Parse candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Parse candidates": {
       "main": [
-        [{ "node": "Crawl page (Crawl4AI)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Crawl page (Crawl4AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Crawl page (Crawl4AI)": {
       "main": [
-        [{ "node": "Merge crawl context", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Merge crawl context",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Merge crawl context": {
       "main": [
-        [{ "node": "Upsert Surface", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Upsert Surface",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Upsert Surface": {
       "main": [
-        [{ "node": "Merge surface context", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Merge surface context",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Merge surface context": {
       "main": [
-        [{ "node": "Upsert Surface Resource", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Upsert Surface Resource",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Upsert Surface Resource": {
       "main": [
-        [{ "node": "Merge resource context", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Merge resource context",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Merge resource context": {
       "main": [
-        [{ "node": "Record public evidence", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Record public evidence",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },

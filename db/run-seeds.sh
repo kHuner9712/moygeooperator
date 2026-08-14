@@ -24,6 +24,7 @@ ORDER=(
   synthetic_publication.sql
   synthetic_retest_reporting.sql
   synthetic_shadow_e2e.sql
+  synthetic_n8n_e2e.sql
 )
 
 for s in "${ORDER[@]}"; do

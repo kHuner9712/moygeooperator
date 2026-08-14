@@ -1,0 +1,69 @@
+# ============================================================================
+# geo-operator — E2E override compose (True N8N Full-Chain gate, P0.18)
+#
+# Adds the deterministic local mock services and wires the worker workflows to
+# them. Used ONLY by scripts/e2e/true-n8n-shadow-runtime.sh — never in prod.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d
+#
+# - mock-search  : deterministic SearXNG-compatible /search
+# - mock-crawl   : deterministic Crawl4AI-compatible /crawl
+# - mock-engine  : deterministic /observe + /fail (500) for fault injection
+#
+# n8n is given SEARCH_BASE_URL / CRAWL_BASE_URL / TEST_FAIL_URL so the worker
+# workflows (WF-02 / WF-04) resolve external dependencies against the mocks
+# while keeping their production defaults (real SearXNG / Crawl4AI).
+# ============================================================================
+name: geo-operator
+
+services:
+  n8n:
+    environment:
+      # Point at the project's OWN ollama container by container_name. A stray
+      # manual container named `ollama` attached to the same network shadows
+      # the `ollama` DNS alias, which made worker workflows hit the wrong
+      # server (model 'qwen2.5:3b' not found). Literal value: .env pins
+      # OLLAMA_URL=http://ollama:11434 and must NOT win in the E2E override.
+      OLLAMA_URL: http://geo-operator-ollama:11434
+      SEARCH_BASE_URL: ${SEARCH_BASE_URL:-http://mock-search:8080}
+      CRAWL_BASE_URL: ${CRAWL_BASE_URL:-http://mock-crawl:8000}
+      TEST_FAIL_URL: ${TEST_FAIL_URL:-http://mock-engine:8010/fail}
+
+  mock-search:
+    build: ./tests/runtime/mock-services
+    image: geo-operator-mock-search:local
+    container_name: geo-operator-mock-search
+    environment:
+      MOCK_PORT: "8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  mock-crawl:
+    build: ./tests/runtime/mock-services
+    image: geo-operator-mock-crawl:local
+    container_name: geo-operator-mock-crawl
+    environment:
+      MOCK_PORT: "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  mock-engine:
+    build: ./tests/runtime/mock-services
+    image: geo-operator-mock-engine:local
+    container_name: geo-operator-mock-engine
+    environment:
+      MOCK_PORT: "8010"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8010/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
