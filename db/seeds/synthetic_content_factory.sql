@@ -34,6 +34,7 @@ CREATE OR REPLACE FUNCTION __synth_assets() RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
   v_brief uuid;
   v_asset uuid;
+  v_variant uuid;
   v_surface uuid;
 BEGIN
   FOR v_brief IN
@@ -46,22 +47,28 @@ BEGIN
     -- (fact_check_status=PASSED AND compliance_status=PASSED) before it can
     -- enter the publication queue. Synthetic content built from VERIFIED
     -- claims passes; a hallucinated asset would be BLOCKED here.
-    PERFORM approve_content_asset(v_asset);
-    -- Surface adaptation: one variant per active owned surface. P0.10: the
-    -- adapted copy is a fresh DRAFT with PENDING gates (client-aware 4-arg
-    -- overload), so we re-run approve_content_asset on each variant exactly
-    -- as WF-06 does — the base's publication-ready status is never inherited.
-    FOR v_surface IN
-      SELECT s.id FROM surfaces s
-      WHERE s.client_id = (SELECT id FROM clients WHERE code='SYNTH-ACME')
-        AND s.owner_entity_id = (SELECT target_entity_id FROM content_briefs WHERE id=v_brief)
-        AND s.active
-    LOOP
-      v_asset := adapt_content_for_surface('SYNTH-ACME', v_asset, v_surface, 'POST');
-      IF v_asset IS NOT NULL THEN
-        PERFORM approve_content_asset(v_asset);
-      END IF;
-    END LOOP;
+    -- Idempotency: on re-run generate_content_asset hits the dedup conflict
+    -- and returns NULL — skip generation AND adaptation entirely.
+    IF v_asset IS NOT NULL THEN
+      PERFORM approve_content_asset(v_asset);
+      -- Surface adaptation: one variant per active owned surface. P0.10: the
+      -- adapted copy is a fresh DRAFT with PENDING gates (client-aware 4-arg
+      -- overload), so we re-run approve_content_asset on each variant exactly
+      -- as WF-06 does — the base's publication-ready status is never inherited.
+      FOR v_surface IN
+        SELECT s.id FROM surfaces s
+        WHERE s.client_id = (SELECT id FROM clients WHERE code='SYNTH-ACME')
+          AND s.owner_entity_id = (SELECT target_entity_id FROM content_briefs WHERE id=v_brief)
+          AND s.active
+      LOOP
+        -- Idempotency: keep v_asset pointing at the canonical; a variant whose
+        -- dedup already exists yields NULL and is skipped, never re-adapted.
+        v_variant := adapt_content_for_surface('SYNTH-ACME', v_asset, v_surface, 'POST');
+        IF v_variant IS NOT NULL THEN
+          PERFORM approve_content_asset(v_variant);
+        END IF;
+      END LOOP;
+    END IF;
   END LOOP;
 END;
 $$;

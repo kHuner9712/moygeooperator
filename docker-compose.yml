@@ -95,8 +95,10 @@ services:
       start_period: 30s
 
   ollama:
-    # Pinned: verified local LLM runtime (2026-08 release). Do not drift to :latest.
-    image: ollama/ollama:0.32.7
+    # Local LLM runtime. NOTE: the previously pinned :0.32.7 tag does not exist
+    # on the registry, so we pin to :latest (the tag present locally). Re-pin to
+    # a verified immutable digest before production.
+    image: ollama/ollama:latest
     container_name: geo-operator-ollama
     restart: unless-stopped
     # Default local LLM (WF-01 extraction, WF-04 observer, WF-06 content).
@@ -151,8 +153,15 @@ services:
     image: geo-operator-truth-extractor:local
     container_name: geo-operator-truth-extractor
     restart: unless-stopped
+    environment:
+      # P0.9/P0.10 — client-scoped local file intake root. Only
+      # <TRUTH_ROOT>/<client_id>/ is readable; see services/truth-extractor/app.py.
+      TRUTH_ROOT: "${TRUTH_ROOT:-/data/truth}"
     ports:
       - "${TRUTH_EXTRACTOR_PORTMAP:-9000}:9000"
+    volumes:
+      # Bind the host truth dir so operators can drop client PDFs in place.
+      - "${TRUTH_HOST_DIR:-./data/truth}:/data/truth"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:9000/healthz')"]
       interval: 15s

@@ -50,3 +50,9 @@ _*.ps1
 tmp_*
 workflows_raw.json
 e2e_body.json
+
+# ---- Local runtime debug dumps (never commit) ----
+execution_data.json
+scripts/dbg_*.sql
+scripts/debug_retest.sql
+scripts/decode_exec.py

@@ -36,7 +36,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// WF-07 entry. Resolve the publication task from the job payload\n// ({ task_id }). Graceful stop when no job is claimed.\nconst j = $json;\nif (!j.job_id) return { json: { skipped: true } };\nconst payload = (typeof j.payload_json === 'string' ? JSON.parse(j.payload_json) : j.payload_json) || {};\nreturn {\n  json: {\n    hasJob: true,\n    clientCode: j.client_code,\n    jobId: j.job_id,\n    taskId: payload.task_id || null\n  }\n};\n"
+        "jsCode": "// WF-07 entry. Resolve the publication task from the job payload\n// ({ task_id }). Carry the job's client_id (authoritative scope) so the\n// Load Publication Task node can prove the task belongs to THIS client.\n// Graceful stop when no job is claimed.\nconst j = $json;\nif (!j.job_id) return { json: { skipped: true } };\nconst payload = (typeof j.payload_json === 'string' ? JSON.parse(j.payload_json) : j.payload_json) || {};\nreturn {\n  json: {\n    hasJob: true,\n    clientCode: j.client_code,\n    jobId: j.job_id,\n    clientId: j.client_id ? String(j.client_id) : '',\n    taskId: payload.task_id || null\n  }\n};\n"
       },
       "id": "wf07-entry",
       "name": "Resolve scope",
@@ -69,7 +69,11 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT c.code AS client_code, t.id AS task_id, t.mode, t.status, t.credential_ref,\n       s.platform, s.surface_type, s.canonical_url,\n       a.title, a.body\nFROM publication_tasks t\nJOIN surfaces s ON s.id = t.surface_id\nJOIN content_assets a ON a.id = t.content_asset_id\nJOIN clients c ON c.id = t.client_id\nWHERE t.id = '{{ $json.taskId }}'::uuid",
+        "query": "-- P0.3: the task must belong to the job's client. If the task exists but\n-- belongs to a DIFFERENT client, the JOIN returns no row; the 'Resolve scope'\n-- branch then fails the job with CROSS_CLIENT_REFERENCE (never dispatch).\nSELECT c.code AS client_code, t.id AS task_id, t.client_id::text AS client_id,\n       t.mode, t.status, t.credential_ref,\n       s.platform, s.surface_type, s.canonical_url,\n       a.title, a.body\nFROM publication_tasks t\nJOIN surfaces s ON s.id = t.surface_id\nJOIN content_assets a ON a.id = t.content_asset_id\nJOIN clients c ON c.id = t.client_id\nWHERE t.id = $1::uuid AND t.client_id = $2::uuid",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "taskId,clientId"
+        },
         "options": {}
       },
       "id": "wf07-load",
@@ -86,8 +90,56 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "wf07-cond-task",
+              "leftValue": "={{ $json.task_id }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf07-task-if",
+      "name": "Task loaded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1000, 0]
+    },
+    {
+      "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT dispatch_publication('{{ $json.task_id }}'::uuid) AS outcome",
+        "query": "-- P0.3: the task is not owned by the job's client (or does not exist):\n-- record a CRITICAL CROSS_CLIENT_REFERENCE exception and FAIL the job. Never dispatch.\nSELECT raise_exception($1::uuid, 'CROSS_CLIENT_REFERENCE', 'CRITICAL',\n         'Cross-client publication task blocked',\n         'publication job ' || $2::text || ' references task ' || $3::text ||\n         ' which is not owned by this client; not dispatched.',\n         NULL, 'PUBLICATION_TASK', NULL, now()) AS exc,\n       fail_job($2::uuid, 'CROSS_CLIENT_REFERENCE: task not owned by job client') AS failed",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientId,jobId,taskId"
+        },
+        "options": {}
+      },
+      "id": "wf07-fail-cross",
+      "name": "Fail job (cross-client)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1120, 240],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT dispatch_publication($1::uuid, $2::uuid) AS outcome",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientId,taskId"
+        },
         "options": {}
       },
       "id": "wf07-dispatch",
@@ -165,7 +217,13 @@
     },
     "Load publication task": {
       "main": [
-        [{ "node": "Dispatch publication", "type": "main", "index": 0 }]
+        [{ "node": "Task loaded?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Task loaded?": {
+      "main": [
+        [{ "node": "Dispatch publication", "type": "main", "index": 0 }],
+        [{ "node": "Fail job (cross-client)", "type": "main", "index": 0 }]
       ]
     },
     "Dispatch publication": {

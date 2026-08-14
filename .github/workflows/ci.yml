@@ -53,6 +53,11 @@ jobs:
       - name: Workflow contract static check (LEVEL 0)
         run: python3 scripts/deploy/static-contract-check.py n8n/workflows
 
+      - name: Truth-extractor security unit tests (P0.9/P0.10/P0.11/P0.12)
+        run: |
+          pip install -q -r services/truth-extractor/requirements.txt
+          python tests/truth_extractor_security_test.py
+
       - name: Apply migrations on clean PostgreSQL (P0.12 / LEVEL 2)
         run: |
           for f in db/migrations/[0-9]*.sql; do
@@ -79,3 +84,6 @@ jobs:
 
       - name: Publication fail-closed integration
         run: psql -v ON_ERROR_STOP=1 -q < tests/integration/publication_verify.sql
+
+      - name: Shadow Runtime DB-contract E2E (WF-01..WF-08 + isolation + job lifecycle)
+        run: psql -v ON_ERROR_STOP=1 -q < tests/integration/shadow_runtime_e2e.sql

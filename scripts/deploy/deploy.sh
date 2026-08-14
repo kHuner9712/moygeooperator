@@ -89,6 +89,37 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "--reimport" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Stage 4b — bind the WF-99 Shared Error Handler to every worker workflow (P0.5)
+#
+# "WF-99 exists" is not enough: each worker (wf04/wf05/wf06/wf07/wf08) must
+# actually reference WF-99 as its error workflow, otherwise a worker failure
+# never reaches fail_job(). The binding lives in <n8n>.workflow_entity.settings
+# -> errorWorkflow (the workflow ID allocated by n8n at import time), so we
+# resolve workflow NAME -> ID and write the binding directly into the n8n DB.
+# This is a formal, reproducible deploy step (n8n reads settings.errorWorkflow
+# from its Postgres store). After writing, n8n is restarted so the in-memory
+# workflow cache picks up the binding.
+# =============================================================================
+say "Stage 4b: bind WF-99 error workflow to worker workflows (P0.5)"
+N8N_PSQL="docker compose exec -T postgres psql -U ${N8N_DB_USER:-geo_operator} -d ${N8N_DB_DATABASE:-n8n} -v ON_ERROR_STOP=1 -qAt"
+err_id="$($N8N_PSQL -c "SELECT id FROM workflow_entity WHERE lower(name) LIKE '%wf-99%' LIMIT 1;")"
+if [ -n "${err_id:-}" ]; then
+  for base in wf04 wf05 wf06 wf07 wf08; do
+    wid="$($N8N_PSQL -c "SELECT id FROM workflow_entity WHERE lower(name) LIKE '%wf-$base%' LIMIT 1;" || true)"
+    if [ -n "${wid:-}" ]; then
+      $N8N_PSQL -c "UPDATE workflow_entity SET settings = jsonb_set(COALESCE(settings,'{}')::jsonb, '{errorWorkflow}', '\"$err_id\"'::jsonb) WHERE id = '$wid';" >/dev/null
+      echo "   bound WF-99 (id=$err_id) as error workflow for wf${base} (id=$wid)"
+    else
+      echo "   !! workflow matching 'wf-$base' not found — error binding skipped"
+    fi
+  done
+  echo "   restarting n8n so the errorWorkflow binding is loaded"
+  docker compose restart n8n >/dev/null 2>&1 && echo "   n8n restarted"
+else
+  echo "   !! WF-99 error handler not found — error binding skipped"
+fi
+
+# ---------------------------------------------------------------------------
 # Stage 5 — activate selected workflows (shadow run: default NONE active)
 # ---------------------------------------------------------------------------
 #

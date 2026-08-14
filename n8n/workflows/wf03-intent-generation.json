@@ -51,7 +51,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT e.canonical_name, e.entity_type\nFROM entities e\nWHERE e.client_id = $1::uuid AND e.status = 'ACTIVE'\n  AND e.entity_type IN ('ORGANIZATION','BRAND','PRODUCT','SERVICE')",
+        "query": "SELECT e.client_id::text AS \"clientId\", e.canonical_name, e.entity_type\nFROM entities e\nWHERE e.client_id = $1::uuid AND e.status = 'ACTIVE'\n  AND e.entity_type IN ('ORGANIZATION','BRAND','PRODUCT','SERVICE')",
         "additionalFields": {
           "mode": "independently",
           "queryParams": "clientId"
@@ -72,7 +72,29 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build an intent-generation prompt for the current entity, handed to Ollama.\n// Input: $json = load-entities output of a single entity {canonical_name, entity_type}.\n// Output: { prompt } single item.\nconst entity = $json.canonical_name || '';\nconst type = $json.entity_type || '';\nconst prompt =\n  'You are a GEO intent strategist for the B2B company \"' + entity + '\" (' + type + ').\\n' +\n  'Return STRICT JSON only, shape:\\n' +\n  '{\"intents\":[{\"entity_name\":\"' + entity + '\",\"intent_type\",\"label\",\"description\",' +\n  '\"commercial\",\"relevance\",\"opportunity\",' +\n  '\"queries\":[{\"query_text\",\"language\":\"zh-CN\",\"region\":\"CN\",\"priority\"}]}]}\\n' +\n  'intent_type one of: PRODUCT, PURCHASE, COMPARE, QUESTION, SCENARIO, REGION, ' +\n  'TRUST, BRAND, AFTER_SALES. commercial/relevance/opportunity are 0-100 numbers; ' +\n  'priority 0-100. Each intent carries 2-5 realistic B2B precision-manufacturing queries.\\n\\nJSON: ';\nreturn { json: { prompt: prompt } };\n"
+        "operation": "executeQuery",
+        "query": "-- P0.13: load the entity + client context that grounds the intent prompt.\n-- No industry/business-model is hard-coded; the prompt is built from the\n-- entity's real type and the client's verified claims / region / target markets.\nSELECT e.canonical_name, e.entity_type,\n       cl.primary_region, cl.primary_language,\n       cl.target_markets::text AS target_markets,\n       COALESCE((SELECT string_agg(clm.field_key || ': ' || clm.claim_text, ' | ')\n                 FROM claims clm WHERE clm.entity_id = e.id\n                   AND clm.verification IN ('VERIFIED','DRAFT')), '') AS verified_claims\nFROM entities e\nJOIN clients cl ON cl.id = e.client_id\nWHERE e.client_id = $1::uuid AND e.canonical_name = $2 AND e.status = 'ACTIVE'\nLIMIT 1",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientId,canonical_name"
+        },
+        "options": {}
+      },
+      "id": "wf03-load-context",
+      "name": "Load intent context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [550, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// P0.13 — Build the intent-generation prompt from the entity + client context\n// loaded at runtime. NO industry/business-model is hard-coded: the prompt is\n// grounded in the entity's real type and the client's verified claims / region\n// / target markets. If context is missing the prompt instructs the model not\n// to assume any industry or business model.\nconst ctx = $node['Load intent context'].json || {};\nconst entity = ctx.canonical_name || '';\nconst type = ctx.entity_type || '';\nconst region = ctx.primary_region || '';\nconst language = ctx.primary_language || '';\nconst markets = ctx.target_markets || '';\nconst claims = ctx.verified_claims || '';\nconst contextBlock =\n  'entity=' + entity + ' (' + type + ')\\n' +\n  'primary_region=' + region + '\\n' +\n  'primary_language=' + language + '\\n' +\n  'target_markets=' + markets + '\\n' +\n  'verified_claims: ' + (claims || '(none)') + '\\n';\nconst prompt =\n  'You are performing GEO discovery for this entity.\\n' +\n  'Use ONLY the supplied verified context. Do not assume an industry or ' +\n  'business model not present in the context.\\n\\n' +\n  'VERIFIED CONTEXT:\\n' + contextBlock +\n  '\\nReturn STRICT JSON only, shape:\\n' +\n  '{\"intents\":[{\"entity_name\":\"' + entity + '\",\"intent_type\",\"label\",\"description\",' +\n  '\"commercial\",\"relevance\",\"opportunity\",' +\n  '\"queries\":[{\"query_text\",\"language\":\"' + (language || 'zh-CN') + '\",\"region\":\"' + (region || 'CN') + '\",\"priority\"}]}]}\\n' +\n  'intent_type one of: PRODUCT, PURCHASE, COMPARE, QUESTION, SCENARIO, REGION, ' +\n  'TRUST, BRAND, AFTER_SALES. commercial/relevance/opportunity are 0-100 numbers; ' +\n  'priority 0-100. Each intent carries 2-5 realistic queries grounded in the verified context.\\n\\nJSON: ';\nreturn { json: { prompt: prompt } };\n"
       },
       "id": "wf03-build-prompt",
       "name": "Build intent prompt",
@@ -176,6 +198,11 @@
       ]
     },
     "Load target entities": {
+      "main": [
+        [{ "node": "Load intent context", "type": "main", "index": 0 }]
+      ]
+    },
+    "Load intent context": {
       "main": [
         [{ "node": "Build intent prompt", "type": "main", "index": 0 }]
       ]
