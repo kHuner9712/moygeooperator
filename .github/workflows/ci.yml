@@ -84,3 +84,6 @@ jobs:
 
       - name: Publication fail-closed integration
         run: psql -v ON_ERROR_STOP=1 -q < tests/integration/publication_verify.sql
+
+      - name: Shadow Runtime DB-contract E2E (WF-01..WF-08 + isolation + job lifecycle)
+        run: psql -v ON_ERROR_STOP=1 -q < tests/integration/shadow_runtime_e2e.sql

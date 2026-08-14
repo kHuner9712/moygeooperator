@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "run_id": "20260814211153",
+  "started_at": "2026-08-14T13:16:08Z",
+  "verdict": "SHADOW_RUN_READY",
+  "stages": [
+    {
+      "name": "L0_stack_sanity",
+      "ok": true
+    },
+    {
+      "name": "L1_db_reproducible",
+      "ok": true
+    },
+    {
+      "name": "L2_security_unit_tests",
+      "ok": true
+    },
+    {
+      "name": "L3_db_contract_e2e",
+      "ok": true
+    },
+    {
+      "name": "L4_n8n_registry",
+      "ok": true
+    },
+    {
+      "name": "L4_wf99_error_binding",
+      "ok": true
+    },
+    {
+      "name": "L5_wf01_run",
+      "ok": true
+    }
+  ],
+  "stack": "geo-operator-n8n Up 8 minutes (healthy);geo-operator-ollama Up 3 hours (healthy);geo-operator-postgres Up 42 hours (healthy);geo-operator-truth-extractor Up 3 hours (healthy);",
+  "notes": "SYNTHETIC shadow-runtime E2E. L3 = DB-contract WF-01..WF-08; L5 = real n8n WF-01 webhook run. All data fictional (SHADOW-E2E-A/B)."
+}

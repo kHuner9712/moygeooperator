@@ -107,7 +107,7 @@ if [ -n "${err_id:-}" ]; then
   for base in wf04 wf05 wf06 wf07 wf08; do
     wid="$($N8N_PSQL -c "SELECT id FROM workflow_entity WHERE lower(name) LIKE '%wf-$base%' LIMIT 1;" || true)"
     if [ -n "${wid:-}" ]; then
-      $N8N_PSQL -c "UPDATE workflow_entity SET settings = jsonb_set(COALESCE(settings,'{}'), '{errorWorkflow}', '\"$err_id\"'::jsonb) WHERE id = '$wid';" >/dev/null
+      $N8N_PSQL -c "UPDATE workflow_entity SET settings = jsonb_set(COALESCE(settings,'{}')::jsonb, '{errorWorkflow}', '\"$err_id\"'::jsonb) WHERE id = '$wid';" >/dev/null
       echo "   bound WF-99 (id=$err_id) as error workflow for wf${base} (id=$wid)"
     else
       echo "   !! workflow matching 'wf-$base' not found — error binding skipped"
