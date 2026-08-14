@@ -27,19 +27,27 @@ BEGIN
   IF v_briefs <> 2 THEN
     RAISE EXCEPTION 'FAIL READY briefs expected 2 got %', v_briefs; END IF;
 
-  -- 2. Assets: one canonical per brief + surface variants; all fact-checked
-  --    VERIFIED. (Later stages may add surface variants, so assert the canonical
-  --    count and the all-VERIFIED invariant rather than an absolute total.)
+  -- 2. Assets: one canonical per brief + surface variants; all must pass the
+  --    Fact + Compliance gates (P0.10/P0.11). Approved assets are
+  --    READY_TO_PUBLISH with fact_check_status=PASSED AND compliance_status=PASSED.
+  --    (Later stages may add surface variants, so assert the canonical count and
+  --    the all-PASSED invariant rather than an absolute total.)
   SELECT count(*) INTO v_assets FROM content_assets
     WHERE client_id=v_cid AND surface_id IS NULL;
   IF v_assets <> 2 THEN
     RAISE EXCEPTION 'FAIL canonical assets expected 2 got %', v_assets; END IF;
   SELECT count(*) INTO v_verified FROM content_assets
-    WHERE client_id=v_cid AND fact_check_status='VERIFIED';
+    WHERE client_id=v_cid AND fact_check_status='PASSED' AND compliance_status='PASSED';
   SELECT count(*) INTO v_not_verified FROM content_assets
-    WHERE client_id=v_cid AND fact_check_status IS DISTINCT FROM 'VERIFIED';
+    WHERE client_id=v_cid
+      AND (fact_check_status IS DISTINCT FROM 'PASSED'
+           OR compliance_status IS DISTINCT FROM 'PASSED');
   IF v_not_verified <> 0 THEN
-    RAISE EXCEPTION 'FAIL a non-VERIFIED asset slipped through: %', v_not_verified; END IF;
+    RAISE EXCEPTION 'FAIL an asset failed a gate: %', v_not_verified; END IF;
+  SELECT count(*) INTO v_not_verified FROM content_assets
+    WHERE client_id=v_cid AND status IS DISTINCT FROM 'READY_TO_PUBLISH';
+  IF v_not_verified <> 0 THEN
+    RAISE EXCEPTION 'FAIL an asset is not READY_TO_PUBLISH: %', v_not_verified; END IF;
 
   -- 3. Every asset body compiles only referenced VERIFIED claims.
   SELECT count(*) INTO v_claim_count FROM content_assets a, claims cl
@@ -66,11 +74,18 @@ BEGIN
   IF v_assets <> 2 THEN
     RAISE EXCEPTION 'FAIL idempotency canonical asset count drifted: %', v_assets; END IF;
 
-  -- 5. Cross-client isolation: no brief/asset leaked to another client.
-  SELECT count(*) INTO v_other FROM content_briefs WHERE client_id IS DISTINCT FROM v_cid;
-  IF v_other <> 0 THEN RAISE EXCEPTION 'FAIL a brief leaked to another client'; END IF;
-  SELECT count(*) INTO v_other FROM content_assets WHERE client_id IS DISTINCT FROM v_cid;
-  IF v_other <> 0 THEN RAISE EXCEPTION 'FAIL an asset leaked to another client'; END IF;
+  -- 5. Cross-client isolation: no brief/asset leaked to a NON-SYNTH client.
+  --    (The runtime_convergence test creates its own SYNTH-A/SYNTH-B fixtures
+  --    with briefs/assets; those are intentional synthetic tenants, so the
+  --    leak check scopes to clients outside the SYNTH-* test namespace.)
+  SELECT count(*) INTO v_other FROM content_briefs cb
+    JOIN clients c ON c.id=cb.client_id
+    WHERE c.code NOT LIKE 'SYNTH-%';
+  IF v_other <> 0 THEN RAISE EXCEPTION 'FAIL a brief leaked to a non-SYNTH client'; END IF;
+  SELECT count(*) INTO v_other FROM content_assets ca
+    JOIN clients c ON c.id=ca.client_id
+    WHERE c.code NOT LIKE 'SYNTH-%';
+  IF v_other <> 0 THEN RAISE EXCEPTION 'FAIL an asset leaked to a non-SYNTH client'; END IF;
 
   RAISE NOTICE 'PASS content_factory: briefs=% assets=% verified=%',
     v_briefs, v_assets, v_verified;

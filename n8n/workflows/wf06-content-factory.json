@@ -69,7 +69,11 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT create_content_brief(:clientCode, :actionId::uuid) AS brief_id",
+        "query": "SELECT create_content_brief($1, $2::uuid) AS brief_id",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientCode,actionId"
+        },
         "options": {}
       },
       "id": "wf06-brief",
@@ -87,7 +91,11 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT b.id AS brief_id, b.canonical_angle,\n       COALESCE(jsonb_agg(jsonb_build_object('field_key', cl.field_key,\n          'claim_text', cl.claim_text)) FILTER (WHERE cl.id IS NOT NULL),\n          '[]'::jsonb) AS verified_claims,\n       e.canonical_name AS entity_name\nFROM content_briefs b\nLEFT JOIN intents i ON i.id = b.intent_id\nLEFT JOIN entities e ON e.id = b.target_entity_id\nLEFT JOIN claims cl ON cl.entity_id = b.target_entity_id\n      AND cl.id = ANY(ARRAY(SELECT jsonb_array_elements_text(b.required_claim_ids)::uuid))\n      AND cl.verification = 'VERIFIED'\nWHERE b.id = :briefId::uuid\nGROUP BY b.id, b.canonical_angle, e.canonical_name",
+        "query": "SELECT b.id AS brief_id, b.canonical_angle,\n       COALESCE(jsonb_agg(jsonb_build_object('field_key', cl.field_key,\n          'claim_text', cl.claim_text)) FILTER (WHERE cl.id IS NOT NULL),\n          '[]'::jsonb) AS verified_claims,\n       e.canonical_name AS entity_name\nFROM content_briefs b\nLEFT JOIN intents i ON i.id = b.intent_id\nLEFT JOIN entities e ON e.id = b.target_entity_id\nLEFT JOIN claims cl ON cl.entity_id = b.target_entity_id\n      AND cl.id = ANY(ARRAY(SELECT jsonb_array_elements_text(b.required_claim_ids)::uuid))\n      AND cl.verification = 'VERIFIED'\nWHERE b.id = $1::uuid\nGROUP BY b.id, b.canonical_angle, e.canonical_name",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "brief_id"
+        },
         "options": {}
       },
       "id": "wf06-load",
@@ -128,7 +136,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract the LLM draft and metadata for storage. The stored asset still goes\n// through Fact QA in the DB (store_content_asset) 鈥?LLM output never bypasses it.\nconst raw = $json.response;\nlet body = '';\nif (typeof raw === 'string') { try { body = JSON.parse(raw).response || raw; } catch (e) { body = raw; } }\nelse if (raw && raw.response) body = raw.response;\nconst brief = $node['Load brief + VERIFIED claims'].json;\nconst entry = $node['Resolve scope'].json;\nreturn {\n  json: {\n    clientCode: entry.clientCode,\n    briefId: brief.brief_id,\n    title: brief.canonical_angle || 'Canonical content',\n    body: String(body).trim(),\n    model: $json.model || 'qwen2.5',\n    tokensIn: $json.prompt_eval_count || null,\n    tokensOut: $json.eval_count || null,\n    latencyMs: ($json.total_duration ? Math.round($json.total_duration / 1000000) : null)\n  }\n};\n"
+        "jsCode": "// Extract the LLM draft and metadata for storage. The stored asset still goes\n// through Fact QA in the DB (store_content_asset) — LLM output never bypasses it.\nconst raw = $json.response;\nlet body = '';\nif (typeof raw === 'string') { try { body = JSON.parse(raw).response || raw; } catch (e) { body = raw; } }\nelse if (raw && raw.response) body = raw.response;\nconst brief = $node['Load brief + VERIFIED claims'].json;\nconst entry = $node['Resolve scope'].json;\nreturn {\n  json: {\n    clientCode: entry.clientCode,\n    briefId: brief.brief_id,\n    title: brief.canonical_angle || 'Canonical content',\n    body: String(body).trim(),\n    model: $json.model || 'qwen2.5',\n    tokensIn: $json.prompt_eval_count || null,\n    tokensOut: $json.eval_count || null,\n    latencyMs: ($json.total_duration ? Math.round($json.total_duration / 1000000) : null)\n  }\n};\n"
       },
       "id": "wf06-parse",
       "name": "Parse LLM draft",
@@ -139,7 +147,11 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT store_content_asset(:clientCode, :briefId::uuid, NULL, 'MARKDOWN',\n  :title, :body, :model, :tokensIn, :tokensOut, :latencyMs) AS asset_id",
+        "query": "SELECT store_content_asset($1, $2::uuid, NULL, 'MARKDOWN',\n  $3, $4, $5, $6, $7, $8) AS asset_id",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientCode,briefId,title,body,model,tokensIn,tokensOut,latencyMs"
+        },
         "options": {}
       },
       "id": "wf06-store",
@@ -157,7 +169,11 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT approve_content_asset('{{ $json.asset_id }}'::uuid) AS gate",
+        "query": "SELECT approve_content_asset($1::uuid) AS gate",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "asset_id"
+        },
         "options": {}
       },
       "id": "wf06-gate",
@@ -174,15 +190,51 @@
     },
     {
       "parameters": {
+        "jsCode": "// P0.12 — interpret the Fact + Compliance gate result. A job is only finished\n// (SUCCEEDED) when BOTH gates PASSED. Otherwise the business action is clearly\n// BLOCKED / QA_REQUIRED and the job is failed, never silently SUCCEEDED.\nconst entry = $node['Resolve scope'].json;\nconst aStore = $node['Store content asset (draft)'].json;\nconst raw = $json.gate;\nlet gate = raw;\nif (typeof raw === 'string') { try { gate = JSON.parse(raw); } catch (e) { gate = {}; } }\ngate = gate || {};\nconst factCheck = gate.fact_check || 'BLOCKED';\nconst compliance = gate.compliance || 'BLOCKED';\nconst passed = factCheck === 'PASSED' && compliance === 'PASSED';\nreturn {\n  json: {\n    jobId: entry.jobId,\n    assetId: aStore.asset_id || null,\n    factCheck: factCheck,\n    compliance: compliance,\n    passed: passed,\n    error: passed ? '' : 'CONTENT_QA_FAILED: fact=' + factCheck + ' compliance=' + compliance\n  }\n};\n"
+      },
+      "id": "wf06-interpret",
+      "name": "Interpret gate result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2640, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "wf06-cond-gate",
+              "leftValue": "={{ $json.passed }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf06-gate-if",
+      "name": "Gate passed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [2860, 0]
+    },
+    {
+      "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT finish_job(:jobId::uuid)",
+        "query": "SELECT finish_job($1::uuid)",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "jobId"
+        },
         "options": {}
       },
       "id": "wf06-finish",
       "name": "Finish job",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [2420, 0],
+      "position": [3080, 0],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -192,7 +244,29 @@
     },
     {
       "parameters": {
-        "jsCode": "// No due content job claimed 鈥?end cleanly.\nreturn { json: { skipped: true } };\n"
+        "operation": "executeQuery",
+        "query": "SELECT fail_job($1::uuid, $2)",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "jobId,error"
+        },
+        "options": {}
+      },
+      "id": "wf06-fail-gate",
+      "name": "Fail job (QA blocked)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [3080, 240],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// No due content job claimed — end cleanly.\nreturn { json: { skipped: true } };\n"
       },
       "id": "wf06-noop",
       "name": "No-op (no job)",
@@ -255,7 +329,18 @@
     },
     "Approve content (fact gate)": {
       "main": [
-        [{ "node": "Finish job", "type": "main", "index": 0 }]
+        [{ "node": "Interpret gate result", "type": "main", "index": 0 }]
+      ]
+    },
+    "Interpret gate result": {
+      "main": [
+        [{ "node": "Gate passed?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gate passed?": {
+      "main": [
+        [{ "node": "Finish job", "type": "main", "index": 0 }],
+        [{ "node": "Fail job (QA blocked)", "type": "main", "index": 0 }]
       ]
     }
   },

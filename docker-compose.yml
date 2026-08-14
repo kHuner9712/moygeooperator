@@ -143,6 +143,23 @@ services:
     ports:
       - "${CRAWL4AI_PORTMAP:-11235}:8000"
 
+  truth-extractor:
+    # Tooling profile only (P0.2 — WF-01 PDF/URL Truth extraction).
+    # Started via: docker compose --profile tooling up truth-extractor
+    build: ./services/truth-extractor
+    profiles: ["tooling"]
+    image: geo-operator-truth-extractor:local
+    container_name: geo-operator-truth-extractor
+    restart: unless-stopped
+    ports:
+      - "${TRUTH_EXTRACTOR_PORTMAP:-9000}:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:9000/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   pgdata:
   n8ndata:

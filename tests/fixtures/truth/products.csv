@@ -1,0 +1,4 @@
+product_code,product_name,spec,pressure_psi,weight_kg
+AC-100,Precision Cylinder 100mm,100mm bore / 25mm stroke,5000,2.4
+AC-200,Precision Cylinder 200mm,200mm bore / 40mm stroke,5000,3.8
+AC-300,Precision Cylinder 300mm,300mm bore / 60mm stroke,5000,5.9
