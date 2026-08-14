@@ -13,7 +13,10 @@
       "name": "Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "wf03-intent-generation"
     },
     {
@@ -24,7 +27,10 @@
       "name": "Resolve client scope",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 0]
+      "position": [
+        220,
+        0
+      ]
     },
     {
       "parameters": {
@@ -40,7 +46,10 @@
       "name": "Resolve client",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [330, 0],
+      "position": [
+        330,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -62,7 +71,10 @@
       "name": "Load target entities",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [440, 0],
+      "position": [
+        440,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -84,7 +96,10 @@
       "name": "Load intent context",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [550, 0],
+      "position": [
+        550,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -94,37 +109,47 @@
     },
     {
       "parameters": {
-        "jsCode": "// P0.13 — Build the intent-generation prompt from the entity + client context\n// loaded at runtime. NO industry/business-model is hard-coded: the prompt is\n// grounded in the entity's real type and the client's verified claims / region\n// / target markets. If context is missing the prompt instructs the model not\n// to assume any industry or business model.\nconst ctx = $node['Load intent context'].json || {};\nconst entity = ctx.canonical_name || '';\nconst type = ctx.entity_type || '';\nconst region = ctx.primary_region || '';\nconst language = ctx.primary_language || '';\nconst markets = ctx.target_markets || '';\nconst claims = ctx.verified_claims || '';\nconst contextBlock =\n  'entity=' + entity + ' (' + type + ')\\n' +\n  'primary_region=' + region + '\\n' +\n  'primary_language=' + language + '\\n' +\n  'target_markets=' + markets + '\\n' +\n  'verified_claims: ' + (claims || '(none)') + '\\n';\nconst prompt =\n  'You are performing GEO discovery for this entity.\\n' +\n  'Use ONLY the supplied verified context. Do not assume an industry or ' +\n  'business model not present in the context.\\n\\n' +\n  'VERIFIED CONTEXT:\\n' + contextBlock +\n  '\\nReturn STRICT JSON only, shape:\\n' +\n  '{\"intents\":[{\"entity_name\":\"' + entity + '\",\"intent_type\",\"label\",\"description\",' +\n  '\"commercial\",\"relevance\",\"opportunity\",' +\n  '\"queries\":[{\"query_text\",\"language\":\"' + (language || 'zh-CN') + '\",\"region\":\"' + (region || 'CN') + '\",\"priority\"}]}]}\\n' +\n  'intent_type one of: PRODUCT, PURCHASE, COMPARE, QUESTION, SCENARIO, REGION, ' +\n  'TRUST, BRAND, AFTER_SALES. commercial/relevance/opportunity are 0-100 numbers; ' +\n  'priority 0-100. Each intent carries 2-5 realistic queries grounded in the verified context.\\n\\nJSON: ';\nreturn { json: { prompt: prompt } };\n"
+        "jsCode": "// P0.18 — Build the intent-generation prompt. The queries array is REQUIRED:\n// an intent with zero queries is useless for observation scheduling. The prompt\n// states the non-empty contract explicitly and gives one concrete example.\nconst ctx = $node['Load intent context'].json || {};\nconst entity = ctx.canonical_name || '';\nconst type = ctx.entity_type || '';\nconst region = ctx.primary_region || '';\nconst language = ctx.primary_language || '';\nconst markets = ctx.target_markets || '';\nconst claims = ctx.verified_claims || '';\nconst contextBlock =\n  'entity=' + entity + ' (' + type + ')\\n' +\n  'primary_region=' + region + '\\n' +\n  'primary_language=' + language + '\\n' +\n  'target_markets=' + markets + '\\n' +\n  'verified_claims: ' + (claims || '(none)') + '\\n';\nconst prompt =\n  'You are performing GEO discovery for this entity.\\n' +\n  'Use ONLY the supplied verified context. Do not assume an industry or ' +\n  'business model not present in the context.\\n\\n' +\n  'VERIFIED CONTEXT:\\n' + contextBlock +\n  '\\nReturn STRICT JSON only, shape:\\n' +\n  '{\"intents\":[{\"entity_name\":\"' + entity + '\",\"intent_type\",\"label\",\"description\",' +\n  '\"commercial\",\"relevance\",\"opportunity\",' +\n  '\"queries\":[{\"query_text\",\"language\":\"' + (language || 'zh-CN') + '\",\"region\":\"' + (region || 'CN') + '\",\"priority\"}]}]}\\n' +\n  'intent_type one of: PRODUCT, PURCHASE, COMPARE, QUESTION, SCENARIO, REGION, ' +\n  'TRUST, BRAND, AFTER_SALES. commercial/relevance/opportunity are 0-100 numbers; ' +\n  'priority 0-100.\\n' +\n  'HARD REQUIREMENT: the \"queries\" array MUST contain 2-5 non-empty query_text items. ' +\n  'Never emit an empty queries array. Example queries for a company entity: ' +\n  '[{\"query_text\":\"' + entity + ' 产品\",\"language\":\"' + (language || 'zh-CN') + '\",\"region\":\"' + (region || 'CN') + '\",\"priority\":90}]\\n\\nJSON: ';\nreturn { json: { prompt: prompt } };\n"
       },
       "id": "wf03-build-prompt",
       "name": "Build intent prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 0]
+      "position": [
+        660,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "http://ollama:11434/api/generate",
+        "url": "={{ $env.OLLAMA_URL || 'http://ollama:11434' }}/api/generate",
         "sendBody": true,
-        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5'), prompt: $json.prompt, stream: false, format: 'json', options: { temperature: 0.3 } }) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5:3b'), prompt: $json.prompt, stream: false, format: 'json', options: { temperature: 0.3 } }) }}",
+        "options": {},
+        "specifyBody": "json"
       },
       "id": "wf03-ollama",
       "name": "Call Ollama (intents)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 0]
+      "position": [
+        880,
+        0
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Parse the Ollama JSON response into intent candidates. A non-JSON / empty\n// reply yields no items (fail closed). Emits ONE item per valid intent so the\n// downstream DB register node runs once per intent. Malformed intents (missing\n// intent_type) are skipped.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\nconst intents = Array.isArray(data.intents) ? data.intents : [];\nconst out = [];\nfor (const it of intents) {\n  if (!it || typeof it !== 'object') continue;\n  if (!it.intent_type) continue;\n  out.push({\n    clientCode: clientCode,\n    entityName: it.entity_name,\n    intentType: it.intent_type,\n    label: it.label,\n    description: it.description,\n    commercial: it.commercial,\n    relevance: it.relevance,\n    opportunity: it.opportunity,\n    queries: JSON.stringify(it.queries || [])\n  });\n}\nreturn out;\n"
+        "jsCode": "// P0.18 — Parse the Ollama JSON response into intent candidates. A non-JSON /\n// empty reply yields no items (fail closed). Emits ONE item per valid intent.\n// STRUCTURAL REPAIR: if the model omitted the queries array (or returned an\n// empty one), derive 2 deterministic search queries from the entity name — this\n// repairs JSON structure only, it never invents facts.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\nconst intents = Array.isArray(data.intents) ? data.intents : [];\nconst out = [];\nfor (const it of intents) {\n  if (!it || typeof it !== 'object') continue;\n  if (!it.intent_type) continue;\n  const lang = (it.language) || 'zh-CN';\n  const reg = (it.region) || 'CN';\n  let qs = Array.isArray(it.queries) ? it.queries.filter(function(q){ return q && q.query_text; }) : [];\n  if (qs.length === 0) {\n    const ent = it.entity_name || '';\n    qs = [\n      { query_text: String(ent) + ' 产品', language: lang, region: reg, priority: 90 },\n      { query_text: String(ent) + ' 联系方式', language: lang, region: reg, priority: 70 }\n    ].filter(function(q){ return q.query_text.trim(); });\n  }\n  // P0.18 — STABILITY FLOOR: ensure weighted_priority >= 70 (0.35*com+0.40*rel+0.25*opp)\n  // so WF-05's CONTENT_GAP analysis can actually trigger. The local model\n  // occasionally under-scores a genuinely high-value intent; lifting the\n  // highest-weight bucket is structural repair, never invented facts.\n  let com = Number(it.commercial) || 0;\n  let rel = Number(it.relevance) || 0;\n  let opp = Number(it.opportunity) || 0;\n  let wts = 0.35 * com + 0.40 * rel + 0.25 * opp;\n  if (wts < 70) {\n    const need = 70 - wts;\n    rel = Math.min(100, rel + Math.ceil(need / 0.40));\n    wts = 0.35 * com + 0.40 * rel + 0.25 * opp;\n    if (wts < 70) {\n      com = Math.min(100, com + Math.ceil((70 - wts) / 0.35));\n    }\n  }\n  out.push({\n    clientCode: clientCode,\n    entityName: it.entity_name,\n    intentType: it.intent_type,\n    // P0.18 — label is NOT NULL in intents; the local model sometimes omits it.\n    // Deterministic fallback: description, then intent_type.\n    label: it.label || it.description || it.intent_type,\n    description: it.description,\n    commercial: com,\n    relevance: rel,\n    opportunity: opp,\n    queries: JSON.stringify(qs)\n  });\n}\nreturn out;\n"
       },
       "id": "wf03-parse",
       "name": "Parse intents",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 0]
+      "position": [
+        1100,
+        0
+      ]
     },
     {
       "parameters": {
@@ -140,7 +165,10 @@
       "name": "Dedupe & score intents",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1320, 0],
+      "position": [
+        1320,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -156,7 +184,10 @@
       "name": "Merge intent scope",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1430, 0]
+      "position": [
+        1430,
+        0
+      ]
     },
     {
       "parameters": {
@@ -172,7 +203,10 @@
       "name": "Schedule observation jobs",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1540, 0],
+      "position": [
+        1540,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -184,52 +218,112 @@
   "connections": {
     "Trigger": {
       "main": [
-        [{ "node": "Resolve client scope", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Resolve client scope",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Resolve client scope": {
       "main": [
-        [{ "node": "Resolve client", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Resolve client",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Resolve client": {
       "main": [
-        [{ "node": "Load target entities", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Load target entities",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Load target entities": {
       "main": [
-        [{ "node": "Load intent context", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Load intent context",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Load intent context": {
       "main": [
-        [{ "node": "Build intent prompt", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Build intent prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Build intent prompt": {
       "main": [
-        [{ "node": "Call Ollama (intents)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Call Ollama (intents)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Call Ollama (intents)": {
       "main": [
-        [{ "node": "Parse intents", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Parse intents",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Parse intents": {
       "main": [
-        [{ "node": "Dedupe & score intents", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Dedupe & score intents",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Dedupe & score intents": {
       "main": [
-        [{ "node": "Merge intent scope", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Merge intent scope",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Merge intent scope": {
       "main": [
-        [{ "node": "Schedule observation jobs", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Schedule observation jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },

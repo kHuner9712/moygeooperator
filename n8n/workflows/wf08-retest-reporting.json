@@ -13,7 +13,10 @@
       "name": "Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "wf08-retest-reporting"
     },
     {
@@ -31,7 +34,10 @@
       "name": "Schedule Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
-      "position": [-220, 200]
+      "position": [
+        -220,
+        200
+      ]
     },
     {
       "parameters": {
@@ -43,7 +49,10 @@
       "name": "Claim due report job",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [220, 0],
+      "position": [
+        220,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -59,18 +68,28 @@
       "name": "Resolve report scope",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 0]
+      "position": [
+        440,
+        0
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "wf08-cond-job",
               "leftValue": "={{ $json.hasJob }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true" }
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
           ],
           "combinator": "and"
@@ -80,8 +99,11 @@
       "id": "wf08-hasjob",
       "name": "Has job?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [660, 0]
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
     },
     {
       "parameters": {
@@ -93,7 +115,10 @@
       "name": "Load client",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [880, 0],
+      "position": [
+        880,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -111,7 +136,10 @@
       "name": "Generate report",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1100, 0],
+      "position": [
+        1100,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -129,7 +157,10 @@
       "name": "Schedule engine retest",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1320, 0],
+      "position": [
+        1320,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -147,7 +178,10 @@
       "name": "Check exception queue",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1540, 0],
+      "position": [
+        1540,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -158,13 +192,20 @@
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "number" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "number"
+          },
           "conditions": [
             {
               "id": "wf08-cond-exc",
               "leftValue": "={{ $json.open_exceptions }}",
               "rightValue": 0,
-              "operator": { "type": "number", "operation": "gt" }
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
             }
           ],
           "combinator": "and"
@@ -174,8 +215,11 @@
       "id": "wf08-hasexc",
       "name": "Has open exceptions?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [1760, -120]
+      "typeVersion": 2,
+      "position": [
+        1760,
+        -120
+      ]
     },
     {
       "parameters": {
@@ -185,7 +229,10 @@
       "name": "Build Feishu payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1980, -260],
+      "position": [
+        1980,
+        -260
+      ],
       "onError": "continueRegularOutput"
     },
     {
@@ -201,7 +248,10 @@
       "name": "Notify exceptions",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2200, -120],
+      "position": [
+        2200,
+        -120
+      ],
       "onError": "continueRegularOutput"
     },
     {
@@ -214,7 +264,10 @@
       "name": "Finish job",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1760, 0],
+      "position": [
+        1760,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -230,70 +283,157 @@
       "name": "No-op (no job)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 200]
+      "position": [
+        880,
+        200
+      ]
     }
   ],
   "connections": {
     "Trigger": {
       "main": [
-        [{ "node": "Claim due report job", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Claim due report job",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Schedule Trigger": {
       "main": [
-        [{ "node": "Claim due report job", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Claim due report job",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Claim due report job": {
       "main": [
-        [{ "node": "Resolve report scope", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Resolve report scope",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Resolve report scope": {
       "main": [
-        [{ "node": "Has job?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Has job?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Has job?": {
       "main": [
-        [{ "node": "Load client", "type": "main", "index": 0 }],
-        [{ "node": "No-op (no job)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Load client",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No-op (no job)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Load client": {
       "main": [
-        [{ "node": "Schedule engine retest", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Schedule engine retest",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Schedule engine retest": {
       "main": [
-        [{ "node": "Generate report", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Generate report",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Generate report": {
       "main": [
-        [{ "node": "Check exception queue", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Check exception queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Check exception queue": {
       "main": [
-        [{ "node": "Has open exceptions?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Has open exceptions?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Has open exceptions?": {
       "main": [
-        [{ "node": "Build Feishu payload", "type": "main", "index": 0 }],
-        [{ "node": "Finish job", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Build Feishu payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finish job",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Build Feishu payload": {
       "main": [
-        [{ "node": "Notify exceptions", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Notify exceptions",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Notify exceptions": {
       "main": [
-        [{ "node": "Finish job", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Finish job",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },

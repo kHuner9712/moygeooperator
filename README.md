@@ -3,12 +3,17 @@
 临时内部 GEO 生产系统，目标支撑约 20 家并发客户。PostgreSQL 是唯一 System of
 Record；NocoDB 是运营 UI；n8n 是流程编排。本仓库与 MOY 正式产品仓库完全独立。
 
-> **当前能力状态（2026-08）**：**Shadow Gate Hotfix & Full Runtime E2E 已完成**。
-> 本地全链路验证 verdict = **SHADOW_RUN_READY**（受监督）——`scripts/e2e/full-shadow-runtime.sh`
-> 通过 L0–L6，含真实 n8n 执行的 WF-01 webhook 链路（`artifacts/shadow-runtime-e2e.json`）。
+> **当前能力状态（2026-08）**：**True N8N Full-Chain Acceptance Gate 已完成**。
+> `scripts/e2e/true-n8n-shadow-runtime.sh`（L0–L29）用同一 synthetic tenant
+> **N8N-E2E-A** + 同一条因果数据链，让 **WF-01 → WF-08 全部由真实 n8n workflow
+> 执行**并通过业务结果断言（非 DB function contract），另含真实 WF-99 故障注入
+> （TEST_HTTP_FAIL → 500 → errorTrigger → fail_job）、cross-client WF-07 攻击
+> 与 max_attempts=3 重试耗尽。全绿 verdict = **SHADOW_RUN_READY**，证据见
+> `artifacts/true-n8n-shadow-runtime.json`。
 > 但 **REAL_CUSTOMER_NOT_READY** —— 仅具备 **FIRST_REAL_CLIENT_SHADOW_RUN** 的
 > 前提条件。仓库内所有业务数据均为 synthetic fixture，不得当作真实业务结果。
-> 尚未接入任何真实客户、真实凭证或真实对外发布。
+> 尚未接入任何真实客户、真实凭证或真实对外发布。该 True N8N 全链路是
+> **Local Release Gate**（PR 合并前必须执行并提交 artifact），不随 CI 运行。
 
 ## 能力状态（Capability State）
 
@@ -25,7 +30,7 @@ Record；NocoDB 是运营 UI；n8n 是流程编排。本仓库与 MOY 正式产�
 | Job Lease / Retry | **IMPLEMENTED** | `recover_expired_leases` 回收过期 RUNNING；`fail_job` 指数退避 `RETRY_WAIT`→`FAILED`+Exception。 |
 | Multi-client Isolation | **IMPLEMENTED** | 跨 client 的对象操作一律 fail closed；`SYNTH-A`/`SYNTH-B` adversarial 测试通过。 |
 | Operator Runtime（NocoDB views） | **IMPLEMENTED** | `v_client_health` / `v_open_exceptions` / `v_manual_publish_queue` / `v_failed_retry_jobs` / `v_content_qa_failures` 等。 |
-| CI / Verification Gate | **IMPLEMENTED** | 轻量 GitHub Actions（分钟级）：JSON 校验 + 违禁字符串扫描 + 静态契约检查 + 干净库迁移/视图/seeds + 集成测试（含 Shadow Runtime WF-01..WF-08 DB-contract E2E）。 |
+| CI / Verification Gate | **IMPLEMENTED** | 轻量 GitHub Actions（分钟级）：JSON 校验 + 违禁字符串扫描 + 静态契约检查 + 干净库迁移/视图/seeds + 集成测试（含 Shadow Runtime DB-contract E2E）。**True N8N Full-Chain**（真实执行 WF-01..WF-08/WF-99）作为 **Local Release Gate**，由 `scripts/e2e/true-n8n-shadow-runtime.sh` 执行并在 PR 合并前提交 `artifacts/true-n8n-shadow-runtime.json`，不跑在 CI 里。 |
 
 **关键约束**：synthetic fixture 只允许存在于 `db/seeds/`、`tests/`；运行时 workflow
 统一输入 `{ job_id, client_id, correlation_id }`，`client_id` 是权威 scope，
@@ -86,14 +91,16 @@ Content / Publication / Report / Job / Exception / LLM Run / Cost。
 ## 目录
 
 ```text
-db/migrations/   版本化迁移（012 = Runtime Convergence P0 修复）
+db/migrations/   版本化迁移（015 = Shadow Runtime Publication Closure）
 db/views/        operator_runtime.sql 等面向运营的视图
-db/seeds/        SYNTHETIC 测试数据（仅测试 fixture）
+db/seeds/        SYNTHETIC 测试数据（仅测试 fixture；synthetic_n8n_e2e.sql = N8N-E2E tenant）
 db/run-migrations.sh / apply-views.sh / run-seeds.sh
-n8n/workflows/   wf01..wf08（Git 为 source representation）
-scripts/         backup / health / deploy / e2e（full-shadow-runtime.sh 全链路 E2E）
-tests/integration/  集成测试（含 shadow_runtime_e2e.sql：WF-01..WF-08 全链路契约）
-artifacts/       本地 E2E 产物（shadow-runtime-e2e.json）
+n8n/workflows/   wf01..wf08 + wf99（Git 为 source representation）
+scripts/         backup / health / deploy / e2e（true-n8n-shadow-runtime.sh True N8N 全链路）
+tests/integration/  集成测试（含 shadow_runtime_e2e.sql：WF-01..WF-08 DB-contract E2E）
+tests/runtime/    本地 deterministic mock 服务（mock-search / mock-crawl / mock-engine / /fail）
+docker-compose.e2e.yml  True N8N 全链路的 e2e 覆盖（OLLAMA_URL 字面量 + mock 端点）
+artifacts/       本地 E2E 产物（true-n8n-shadow-runtime.json）
 .github/workflows/  轻量 CI
 ```
 
@@ -119,7 +126,9 @@ artifacts/       本地 E2E 产物（shadow-runtime-e2e.json）
   未接入。
 - **Factuality**：基于规则 + Truth comparison（token overlap + 数字矛盾检测），
   第二模型仅作辅助，不作唯一事实裁判。
-- **尚未开始**真实客户 Shadow Run 的导入与执行；本地全链路 E2E 已用 synthetic
-  tenant（SHADOW-E2E-A/B）通过，verdict=**SHADOW_RUN_READY**（`scripts/e2e/full-shadow-runtime.sh`）。
+- **尚未开始**真实客户 Shadow Run 的导入与执行；本地 True N8N 全链路已用 synthetic
+  tenant（N8N-E2E-A/B）真实跑通 WF-01..WF-08 + WF-99，verdict=**SHADOW_RUN_READY**
+  （`scripts/e2e/true-n8n-shadow-runtime.sh`，DB-contract 层保留
+  `tests/integration/shadow_runtime_e2e.sql` 作为 CI 的 DB_CONTRACT_E2E）。
 
 详见上游设计包 `../GEO_Operator_Internal_Pack/`。

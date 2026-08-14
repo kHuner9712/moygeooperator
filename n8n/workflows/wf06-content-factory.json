@@ -13,7 +13,10 @@
       "name": "Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "wf06-content-factory"
     },
     {
@@ -26,7 +29,10 @@
       "name": "Claim due content job",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [220, 0],
+      "position": [
+        220,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -42,18 +48,28 @@
       "name": "Resolve scope",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 0]
+      "position": [
+        440,
+        0
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "wf06-cond-job",
               "leftValue": "={{ $json.hasJob }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true" }
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
           ],
           "combinator": "and"
@@ -63,8 +79,11 @@
       "id": "wf06-hasjob",
       "name": "Has job?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [660, 0]
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
     },
     {
       "parameters": {
@@ -80,7 +99,10 @@
       "name": "Create content brief",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [880, 0],
+      "position": [
+        880,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -102,7 +124,10 @@
       "name": "Load brief + VERIFIED claims",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1320, 0],
+      "position": [
+        1320,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -112,37 +137,47 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build a generation prompt that sources ONLY the brief's VERIFIED claims.\n// The LLM is allowed to restructure language, never to invent new facts.\nconst ctx = $json;\nconst claims = Array.isArray(ctx.verified_claims) ? ctx.verified_claims : [];\nconst factList = claims.map(c => '- ' + (c.field_key || '') + ': ' + (c.claim_text || '')).join('\\n');\nconst prompt =\n  'You are a GEO content writer. Write canonical, fact-accurate marketing copy for the entity \"'\n  + (ctx.entity_name || '') + '\".\\n' +\n  'Use ONLY the following VERIFIED facts. Do NOT add, infer, or repeat any fact not listed.\\n\\n' +\n  'VERIFIED FACTS:\\n' + (factList || '(none)') + '\\n\\n' +\n  'Angle: ' + (ctx.canonical_angle || '') + '\\n\\n' +\n  'Produce a concise, publication-ready draft (title + body).';\nreturn { json: { prompt: prompt, claimCount: claims.length } };\n"
+        "jsCode": "// Build a generation prompt that sources ONLY the brief's VERIFIED claims.\n// The LLM is allowed to restructure language, never to invent new facts.\nconst ctx = $json;\nconst claims = Array.isArray(ctx.verified_claims) ? ctx.verified_claims : [];\nconst factList = claims.map(c => '- ' + (c.field_key || '') + ': ' + (c.claim_text || '')).join('\\n');\nconst prompt =\n  'You are a GEO content writer. Write canonical, fact-accurate copy for \"'\n  + (ctx.entity_name || '') + '\".\\n' +\n  'HARD CONSTRAINT: every sentence of the body MUST be a direct restatement of one of the VERIFIED FACTS below. ' +\n  'Do NOT add any industry, service, capability, history, advantage, or number that is not listed. ' +\n  'If a fact cannot support a sentence, omit it.\\n\\n' +\n  'VERIFIED FACTS:\\n' + (factList || '(none)') + '\\n\\n' +\n  'Angle: ' + (ctx.canonical_angle || '') + '\\n\\n' +\n  'Return STRICT JSON only: {\"title\": \"...\", \"body\": \"...\"} The body must be 2-4 short sentences, ' +\n  'each restating exactly one VERIFIED FACT. JSON: ';\nreturn { json: { prompt: prompt, claimCount: claims.length } };\n"
       },
       "id": "wf06-build-prompt",
       "name": "Build generation prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1540, 0]
+      "position": [
+        1540,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "http://ollama:11434/api/generate",
+        "url": "={{ $env.OLLAMA_URL || 'http://ollama:11434' }}/api/generate",
         "sendBody": true,
-        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5'), prompt: $json.prompt, stream: false, options: { temperature: 0.3 } }) }}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5:3b'), prompt: $json.prompt, stream: false, options: { temperature: 0.0 } }) }}",
+        "options": {},
+        "specifyBody": "json"
       },
       "id": "wf06-ollama",
       "name": "Call Ollama (content generation)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1760, 0]
+      "position": [
+        1760,
+        0
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Extract the LLM draft and metadata for storage. The stored asset still goes\n// through Fact QA in the DB (store_content_asset) — LLM output never bypasses it.\nconst raw = $json.response;\nlet body = '';\nif (typeof raw === 'string') { try { body = JSON.parse(raw).response || raw; } catch (e) { body = raw; } }\nelse if (raw && raw.response) body = raw.response;\nconst brief = $node['Load brief + VERIFIED claims'].json;\nconst entry = $node['Resolve scope'].json;\nreturn {\n  json: {\n    clientCode: entry.clientCode,\n    briefId: brief.brief_id,\n    title: brief.canonical_angle || 'Canonical content',\n    body: String(body).trim(),\n    model: $json.model || 'qwen2.5',\n    tokensIn: $json.prompt_eval_count || null,\n    tokensOut: $json.eval_count || null,\n    latencyMs: ($json.total_duration ? Math.round($json.total_duration / 1000000) : null)\n  }\n};\n"
+        "jsCode": "// Extract the LLM draft and metadata for storage. The stored asset still goes\n// through Fact QA in the DB (store_content_asset) — LLM output never bypasses it.\nconst raw = $json.response;\nlet text = '';\nif (typeof raw === 'string') {\n  try { const parsed = JSON.parse(raw); text = (parsed && parsed.body) ? parsed.body : (parsed && parsed.response ? parsed.response : raw); } catch (e) { text = raw; }\n}\nelse if (raw) { text = raw.body || raw.response || ''; }\nconst brief = $node['Load brief + VERIFIED claims'].json;\nconst entry = $node['Resolve scope'].json;\n// FIDELITY FILTER (P0.18): deterministic sentence-level fact gate mirror.\n// tokenize like text_tokens(): lower, keep [a-z0-9-], length>=2.\nfunction toks(s) {\n  const t = String(s || '').toLowerCase().split(/\\s+/).map(function(w){ return w.replace(/[^a-z0-9\\u4e00-\\u9fff%\\-]/g, ''); }).filter(function(w){ return w.length >= 2; });\n  return Array.from(new Set(t));\n}\nconst claimList = Array.isArray(brief.verified_claims) ? brief.verified_claims : [];\nconst claimToks = claimList.map(function(cl){ return toks(cl.claim_text); });\nconst sents = String(text).split(/(?<=[.!?。！？])\\s*/).map(function(s){ return s.trim(); }).filter(function(s){ return s.length > 0; });\nconst kept = [];\nfor (const s of sents) {\n  const st = toks(s);\n  let best = 0;\n  for (const ct of claimToks) {\n    if (st.length === 0 || ct.length === 0) continue;\n    const inter = st.filter(function(x){ return ct.indexOf(x) !== -1; }).length;\n    const uni = new Set(st.concat(ct)).size;\n    const ov = inter / uni;\n    if (ov > best) best = ov;\n  }\n  if (best >= 0.5) kept.push(s);\n}\nconst body = kept.length > 0 ? kept.join(' ') : (claimList.length > 0 ? claimList[0].claim_text : String(text).trim());\nreturn {\n  json: {\n    clientCode: entry.clientCode,\n    briefId: brief.brief_id,\n    title: brief.canonical_angle || 'Canonical content',\n    body: body,\n    model: $json.model || 'qwen2.5',\n    tokensIn: $json.prompt_eval_count || null,\n    tokensOut: $json.eval_count || null,\n    latencyMs: ($json.total_duration ? Math.round($json.total_duration / 1000000) : null)\n  }\n};\n"
       },
       "id": "wf06-parse",
       "name": "Parse LLM draft",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1980, 0]
+      "position": [
+        1980,
+        0
+      ]
     },
     {
       "parameters": {
@@ -158,7 +193,10 @@
       "name": "Store content asset (draft)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [2200, 0],
+      "position": [
+        2200,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -180,7 +218,10 @@
       "name": "Approve content (fact gate)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [2420, 0],
+      "position": [
+        2420,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -196,18 +237,28 @@
       "name": "Interpret gate result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2640, 0]
+      "position": [
+        2640,
+        0
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "wf06-cond-gate",
               "leftValue": "={{ $json.passed }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true" }
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
           ],
           "combinator": "and"
@@ -217,8 +268,11 @@
       "id": "wf06-gate-if",
       "name": "Gate passed?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [2860, 0]
+      "typeVersion": 2,
+      "position": [
+        2860,
+        0
+      ]
     },
     {
       "parameters": {
@@ -234,7 +288,10 @@
       "name": "Close to publication",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [3080, 0],
+      "position": [
+        3080,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -256,7 +313,10 @@
       "name": "Finish job",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [3300, 0],
+      "position": [
+        3300,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -278,7 +338,10 @@
       "name": "Fail job (QA blocked)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [3080, 240],
+      "position": [
+        3080,
+        240
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -294,80 +357,179 @@
       "name": "No-op (no job)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 200]
+      "position": [
+        880,
+        200
+      ]
     }
   ],
   "connections": {
     "Trigger": {
       "main": [
-        [{ "node": "Claim due content job", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Claim due content job",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Claim due content job": {
       "main": [
-        [{ "node": "Resolve scope", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Resolve scope",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Resolve scope": {
       "main": [
-        [{ "node": "Has job?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Has job?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Has job?": {
       "main": [
-        [{ "node": "Create content brief", "type": "main", "index": 0 }],
-        [{ "node": "No-op (no job)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Create content brief",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No-op (no job)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Create content brief": {
       "main": [
-        [{ "node": "Load brief + VERIFIED claims", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Load brief + VERIFIED claims",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Load brief + VERIFIED claims": {
       "main": [
-        [{ "node": "Build generation prompt", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Build generation prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Build generation prompt": {
       "main": [
-        [{ "node": "Call Ollama (content generation)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Call Ollama (content generation)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Call Ollama (content generation)": {
       "main": [
-        [{ "node": "Parse LLM draft", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Parse LLM draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Parse LLM draft": {
       "main": [
-        [{ "node": "Store content asset (draft)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Store content asset (draft)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Store content asset (draft)": {
       "main": [
-        [{ "node": "Approve content (fact gate)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Approve content (fact gate)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Approve content (fact gate)": {
       "main": [
-        [{ "node": "Interpret gate result", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Interpret gate result",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Interpret gate result": {
       "main": [
-        [{ "node": "Gate passed?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Gate passed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Gate passed?": {
       "main": [
-        [{ "node": "Close to publication", "type": "main", "index": 0 }],
-        [{ "node": "Fail job (QA blocked)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Close to publication",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fail job (QA blocked)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Close to publication": {
       "main": [
-        [{ "node": "Finish job", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Finish job",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },

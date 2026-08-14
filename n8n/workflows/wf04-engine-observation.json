@@ -13,7 +13,10 @@
       "name": "Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "wf04-engine-observation"
     },
     {
@@ -26,7 +29,10 @@
       "name": "Claim due observation job",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [220, 0],
+      "position": [
+        220,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -42,18 +48,28 @@
       "name": "Select observer",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, 0]
+      "position": [
+        440,
+        0
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "wf04-cond-job",
               "leftValue": "={{ $json.state }}",
               "rightValue": "job",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -63,8 +79,11 @@
       "id": "wf04-hasjob",
       "name": "Has job?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [660, 0]
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
     },
     {
       "parameters": {
@@ -80,7 +99,10 @@
       "name": "Resolve engine adapter",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [880, 0],
+      "position": [
+        880,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -90,24 +112,34 @@
     },
     {
       "parameters": {
-        "jsCode": "// P0.6 — route by the REAL enabled adapter (never by payload.mode).\n// adapter comes from resolve_engine_adapter(). NULL => no enabled adapter =>\n// UNSUPPORTED (fail closed, never silently Ollama).\nconst job = $node['Select observer'].json;\nconst adapter = $json.adapter || null;\nlet branch = 'unsupported';\nif (adapter === 'LOCAL_OLLAMA') branch = 'ollama';\nelse if (adapter === 'MANUAL_OBSERVATION' || adapter === 'UI_OBSERVATION') branch = 'manual';\nreturn {\n  json: {\n    clientCode: job.clientCode,\n    jobId: job.jobId,\n    runKey: job.runKey,\n    engineId: job.engineId,\n    queryId: job.queryId,\n    adapter: adapter,\n    branch: branch\n  }\n};\n"
+        "jsCode": "// P0.6 — route by the REAL enabled adapter (never by payload.mode).\n// adapter comes from resolve_engine_adapter(). NULL => no enabled adapter =>\n// UNSUPPORTED (fail closed, never silently Ollama).\n// P0.18 — TEST_HTTP_FAIL: deterministic fault-injection adapter (E2E only).\n// It routes to a test HTTP node that always returns 500, so the execution\n// errors and the WF-99 error handler fails the job for real.\nconst job = $node['Select observer'].json;\nconst adapter = $json.adapter || null;\nlet branch = 'unsupported';\nif (adapter === 'LOCAL_OLLAMA') branch = 'ollama';\nelse if (adapter === 'TEST_HTTP_FAIL') branch = 'test_fail';\nelse if (adapter === 'MANUAL_OBSERVATION' || adapter === 'UI_OBSERVATION') branch = 'manual';\nreturn {\n  json: {\n    clientCode: job.clientCode,\n    jobId: job.jobId,\n    runKey: job.runKey,\n    engineId: job.engineId,\n    queryId: job.queryId,\n    adapter: adapter,\n    branch: branch\n  }\n};\n"
       },
       "id": "wf04-map-adapter",
       "name": "Map adapter to branch",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1100, 0]
+      "position": [
+        1100,
+        0
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "wf04-cond-ollama",
               "leftValue": "={{ $json.branch }}",
               "rightValue": "ollama",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
@@ -117,8 +149,61 @@
       "id": "wf04-adapter-if",
       "name": "Adapter via Ollama?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [1320, 0]
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "wf04-cond-testfail",
+              "leftValue": "={{ $json.branch }}",
+              "rightValue": "test_fail",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf04-testfail-if",
+      "name": "Adapter is test-fail?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TEST_FAIL_URL || 'http://mock-engine:8010/fail' }}?job_id={{ $json.jobId }}",
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify({ engine_id: $json.engineId, query_id: $json.queryId, job_id: $json.jobId }) }}",
+        "specifyBody": "json",
+        "options": {}
+      },
+      "id": "wf04-testfail-http",
+      "name": "Call test engine (injected 500)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1660,
+        240
+      ]
     },
     {
       "parameters": {
@@ -134,7 +219,10 @@
       "name": "Load observer context",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1540, 0],
+      "position": [
+        1540,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -150,14 +238,17 @@
       "name": "Build observer prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1760, 0]
+      "position": [
+        1760,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "http://ollama:11434/api/generate",
+        "url": "={{ $env.OLLAMA_URL || 'http://ollama:11434' }}/api/generate",
         "sendBody": true,
-        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5:0.5b'), prompt: $json.prompt, stream: false, options: { temperature: 0 } }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5:3b'), prompt: $json.prompt, stream: false, options: { temperature: 0 } }) }}",
         "specifyBody": "json",
         "options": {}
       },
@@ -165,7 +256,10 @@
       "name": "Call Ollama (local LLM observer)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1980, 0]
+      "position": [
+        1980,
+        0
+      ]
     },
     {
       "parameters": {
@@ -175,7 +269,10 @@
       "name": "Parse & extract",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2200, 0]
+      "position": [
+        2200,
+        0
+      ]
     },
     {
       "parameters": {
@@ -191,7 +288,10 @@
       "name": "Record observation",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [2420, 0],
+      "position": [
+        2420,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -207,18 +307,28 @@
       "name": "Check observation recorded",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2640, 0]
+      "position": [
+        2640,
+        0
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "wf04-cond-obs",
               "leftValue": "={{ $json.hasObservation }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true" }
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
           ],
           "combinator": "and"
@@ -228,8 +338,11 @@
       "id": "wf04-obs-if",
       "name": "Observation recorded?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [2860, 0]
+      "typeVersion": 2,
+      "position": [
+        2860,
+        0
+      ]
     },
     {
       "parameters": {
@@ -239,7 +352,10 @@
       "name": "Merge job finish context",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [3080, 0]
+      "position": [
+        3080,
+        0
+      ]
     },
     {
       "parameters": {
@@ -255,7 +371,10 @@
       "name": "Finish job",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [3300, 0],
+      "position": [
+        3300,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -266,7 +385,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT refresh_engine_surface_profiles($1::uuid, CURRENT_DATE - 7) AS profiles",
+        "query": "SELECT refresh_engine_surface_profiles($1::uuid, (CURRENT_DATE - 7)::date, CURRENT_DATE, NULL) AS profiles",
         "additionalFields": {
           "mode": "independently",
           "queryParams": "engine_id"
@@ -277,7 +396,10 @@
       "name": "Refresh engine surface profiles",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [3520, 0],
+      "position": [
+        3520,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -293,7 +415,10 @@
       "name": "Fail job (no observation)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [3080, 240]
+      "position": [
+        3080,
+        240
+      ]
     },
     {
       "parameters": {
@@ -309,7 +434,10 @@
       "name": "Fail job in DB",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [3300, 240],
+      "position": [
+        3300,
+        240
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -325,7 +453,10 @@
       "name": "Fail job (adapter)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1540, 240]
+      "position": [
+        1540,
+        240
+      ]
     },
     {
       "parameters": {
@@ -335,101 +466,248 @@
       "name": "No-op (no job)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 260]
+      "position": [
+        880,
+        260
+      ]
     }
   ],
   "connections": {
     "Trigger": {
       "main": [
-        [{ "node": "Claim due observation job", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Claim due observation job",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Claim due observation job": {
       "main": [
-        [{ "node": "Select observer", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Select observer",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Select observer": {
       "main": [
-        [{ "node": "Has job?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Has job?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Has job?": {
       "main": [
-        [{ "node": "Resolve engine adapter", "type": "main", "index": 0 }],
-        [{ "node": "No-op (no job)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Resolve engine adapter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No-op (no job)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Resolve engine adapter": {
       "main": [
-        [{ "node": "Map adapter to branch", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Map adapter to branch",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Map adapter to branch": {
       "main": [
-        [{ "node": "Adapter via Ollama?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Adapter via Ollama?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Adapter via Ollama?": {
       "main": [
-        [{ "node": "Load observer context", "type": "main", "index": 0 }],
-        [{ "node": "Fail job (adapter)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Load observer context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Adapter is test-fail?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adapter is test-fail?": {
+      "main": [
+        [
+          {
+            "node": "Call test engine (injected 500)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fail job (adapter)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Fail job (adapter)": {
       "main": [
-        [{ "node": "Fail job in DB", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Fail job in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Load observer context": {
       "main": [
-        [{ "node": "Build observer prompt", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Build observer prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Build observer prompt": {
       "main": [
-        [{ "node": "Call Ollama (local LLM observer)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Call Ollama (local LLM observer)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Call Ollama (local LLM observer)": {
       "main": [
-        [{ "node": "Parse & extract", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Parse & extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Parse & extract": {
       "main": [
-        [{ "node": "Record observation", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Record observation",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Record observation": {
       "main": [
-        [{ "node": "Check observation recorded", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Check observation recorded",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Check observation recorded": {
       "main": [
-        [{ "node": "Observation recorded?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Observation recorded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Observation recorded?": {
       "main": [
-        [{ "node": "Merge job finish context", "type": "main", "index": 0 }],
-        [{ "node": "Fail job (no observation)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Merge job finish context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fail job (no observation)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Merge job finish context": {
       "main": [
-        [{ "node": "Finish job", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Finish job",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Fail job (no observation)": {
       "main": [
-        [{ "node": "Fail job in DB", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Fail job in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Finish job": {
       "main": [
-        [{ "node": "Refresh engine surface profiles", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Refresh engine surface profiles",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },

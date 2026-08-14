@@ -13,7 +13,10 @@
       "name": "Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "webhookId": "wf01-truth-intake"
     },
     {
@@ -24,7 +27,10 @@
       "name": "Resolve client scope",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 0]
+      "position": [
+        220,
+        0
+      ]
     },
     {
       "parameters": {
@@ -40,7 +46,10 @@
       "name": "Resolve client",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [330, 0],
+      "position": [
+        330,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -62,7 +71,10 @@
       "name": "Load raw PDF/URL Truth docs",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [440, 0],
+      "position": [
+        440,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -73,13 +85,20 @@
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "wf01-cond-extract",
               "leftValue": "={{ $json.documentId }}",
               "rightValue": "",
-              "operator": { "type": "string", "operation": "notEmpty" }
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
             }
           ],
           "combinator": "and"
@@ -89,25 +108,38 @@
       "id": "wf01-need-extract",
       "name": "Needs extraction?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [660, 0]
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
               "id": "wf01-cond-pdf-type",
               "leftValue": "={{ $json.documentType }}",
               "rightValue": "PDF",
-              "operator": { "type": "string", "operation": "equals" }
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             },
             {
               "id": "wf01-cond-pdf-path",
               "leftValue": "={{ $json.file_path }}",
               "rightValue": "",
-              "operator": { "type": "string", "operation": "notEmpty" }
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
             }
           ],
           "combinator": "and"
@@ -117,8 +149,11 @@
       "id": "wf01-extract-pdf-if",
       "name": "Is PDF file?",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [880, 0]
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
     },
     {
       "parameters": {
@@ -133,7 +168,10 @@
       "name": "Extract PDF file (truth-extractor)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [990, 120]
+      "position": [
+        990,
+        120
+      ]
     },
     {
       "parameters": {
@@ -148,7 +186,10 @@
       "name": "Extract URL (truth-extractor)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [990, -120]
+      "position": [
+        990,
+        -120
+      ]
     },
     {
       "parameters": {
@@ -158,7 +199,10 @@
       "name": "Merge extraction context",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [990, 0]
+      "position": [
+        990,
+        0
+      ]
     },
     {
       "parameters": {
@@ -174,7 +218,10 @@
       "name": "Ingest extracted content",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1100, 0],
+      "position": [
+        1100,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -196,7 +243,10 @@
       "name": "Load content Truth docs",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1320, 0],
+      "position": [
+        1320,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -206,68 +256,239 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build a single extraction prompt from all received Truth docs with content.\n// The LLM extracts claims from the ACTUAL content, never from metadata alone.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst clientId = scope.clientId;\nconst docs = $('Load content Truth docs').all().map(function(it){ return it.json; });\nconst list = docs.map(function(d){\n  return '- doc[' + (d.import_key || '') + '] type=' + (d.documentType || '') +\n  '\\n  title=' + (d.title || '') + ' uri=' + (d.source_uri || '') +\n  '\\n  content: ' + (d.content || '(unavailable)');\n}).join('\\n');\nconst prompt =\n  'You extract canonical facts from client-provided truth documents. ' +\n  'Extract claims ONLY from the content shown below; do not invent facts absent from it.\\n' +\n  'Return STRICT JSON only, shape:\\n' +\n  '{\"documents\":[],' +\n  '\"entities\":[{\"entity_type\",\"canonical_name\",\"aliases\":[]}],' +\n  '\"claims\":[{\"entity_type\",\"entity_name\",\"field_key\",\"claim_text\",\"document_key\",\"import_key\"}]}\\n' +\n  'Every claim MUST carry: entity_type (one of ORGANIZATION|BRAND|PRODUCT|SERVICE|LOCATION|' +\n  'CERTIFICATE|PERSON|OTHER), entity_name (matching an entity in the entities array), ' +\n  'field_key, claim_text, document_key = the import_key of the doc it came from, ' +\n  'and a deterministic import_key like \"SYNTH-<document_key>-<n>\".\\n' +\n  'Do NOT omit entity_type or entity_name on any claim\\u2014every claim must bind to a declared entity.\\n\\n' +\n  'DOCUMENTS:\\n' + (list || '(none)') + '\\n\\nJSON: ';\nreturn { json: { clientId: clientId, clientCode: clientCode, prompt: prompt } };\n"
+        "jsCode": "// Build a single extraction prompt from all received Truth docs with content.\n// The LLM extracts claims from the ACTUAL content, never from metadata alone.\n// A retry attempt carries VALIDATION FEEDBACK on $json.feedback; when present\n// it is appended so the model can fix the specific schema/coverage defects.\n// True n8n gate (P0.18): stable structured extraction with validation + retry.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst clientId = scope.clientId;\nconst docs = $('Load content Truth docs').all().map(function(it){ return it.json; });\nconst list = docs.map(function(d){\n  return '- doc[' + (d.import_key || '') + '] type=' + (d.documentType || '') +\n  '\\n  title=' + (d.title || '') + ' uri=' + (d.source_uri || '') +\n  '\\n  content: ' + (d.content || '(unavailable)');\n}).join('\\n');\nconst feedback = ($json && $json.feedback)\n  ? 'VALIDATION FEEDBACK - fix ALL of these issues in your next answer:\\n' + $json.feedback + '\\n\\n'\n  : '';\nconst prompt =\n  'You extract canonical facts from client-provided truth documents. ' +\n  'Extract claims ONLY from the content shown below; do not invent facts absent from it.\\n' +\n  'Return STRICT JSON only, shape:\\n' +\n  '{\"documents\":[],' +\n  '\"entities\":[{\"entity_type\",\"canonical_name\",\"aliases\":[]}],' +\n  '\"claims\":[{\"entity_type\",\"entity_name\",\"field_key\",\"claim_text\",\"document_key\",\"import_key\"}]}\\n' +\n  'Rules:\\n' +\n  '- Every named entity in the text MUST appear in entities with a non-empty canonical_name.\\n' +\n  '- Every claim MUST carry: entity_type (one of ORGANIZATION|BRAND|PRODUCT|SERVICE|LOCATION|' +\n  'CERTIFICATE|PERSON|OTHER), entity_name (EXACTLY matching the canonical_name of an entity you declared), ' +\n  'field_key, claim_text (the verbatim factual sentence from the document), ' +\n  'document_key (the import_key of the doc it came from), and a deterministic ' +\n  'import_key like \"SYNTH-<document_key>-<n>\".\\n' +\n  '- Every claim MUST reference an entity you declared; never reference an undeclared entity.\\n' +\n  '- Do NOT merge multiple facts into one claim_text; one fact per claim.\\n\\n' +\n  feedback +\n  'DOCUMENTS:\\n' + (list || '(none)') + '\\n\\nJSON: ';\nreturn { json: { clientId: clientId, clientCode: clientCode, prompt: prompt } };\n"
       },
-      "id": "wf01-build-prompt",
-      "name": "Build extraction prompt",
+      "id": "wf01-build-prompt-a",
+      "name": "Build extraction prompt A",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1540, 0]
+      "position": [
+        1540,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "http://ollama:11434/api/generate",
+        "url": "={{ $env.OLLAMA_URL || 'http://ollama:11434' }}/api/generate",
         "sendBody": true,
-        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5:0.5b'), prompt: $json.prompt, stream: false, format: 'json', options: { temperature: 0.0 } }) }}",
+        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5:3b'), prompt: $json.prompt, stream: false, format: 'json', options: { temperature: 0.0 } }) }}",
         "specifyBody": "json",
         "options": {}
       },
-      "id": "wf01-ollama",
-      "name": "Call Ollama (extract)",
+      "id": "wf01-ollama-a",
+      "name": "Call Ollama (extract A)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1760, 0]
+      "position": [
+        1760,
+        0
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// Parse the Ollama JSON response into import_truth_pack() inputs. P0.1:\n// evidence must bind claim -> truth_document -> locator. document_key is\n// resolved against the loaded docs' REAL import_key, and evidence_locator\n// carries the authoritative truth_documents.id (document_id).\n//\n// P0.1 (validation): every claim MUST carry entity_type, entity_name,\n// document_key and claim_text. If ANY claim is missing a required field the\n// extraction FAILS CLOSED (CLAIM_EXTRACTION_FAILED) and is NOT imported — a\n// partial/silent import is forbidden. The DB import_truth_pack() is the second\n// net (CLAIM_ENTITY_UNRESOLVED) but must never be relied on alone.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst clientId = scope.clientId;\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\nconst docs = Array.isArray(data.documents) ? data.documents : [];\n\n// Normalize entities: small models may echo the schema field names verbatim.\nconst ents = Array.isArray(data.entities) ? data.entities : [];\nconst hasEntity = {};\nconst entities = [];\nfor (const e of ents) {\n  if (!e || typeof e !== 'object' || e.claim) continue;\n  const canonical = e.canonical_name || e.entity_name;\n  if (!canonical) continue;\n  const etype = (e.entity_type && e.entity_type !== 'canonical_name') ? e.entity_type : 'COMPANY';\n  entities.push({ entity_type: etype, canonical_name: canonical, aliases: Array.isArray(e.aliases) ? e.aliases : [] });\n  hasEntity[etype + '||' + canonical] = true;\n}\n\n// Resolve each claim's document_key to the REAL truth_documents.id.\nconst loaded = $('Load content Truth docs').all().map(function(it){ return it.json; });\nconst byKey = {};\nfor (const d of loaded) byKey[d.import_key] = d;\nconst claims = Array.isArray(data.claims) ? data.claims : [];\nconst claimsOut = [];\nconst invalid = [];\nfor (const c of claims) {\n  if (!c || typeof c !== 'object') { invalid.push('(non-object)'); continue; }\n  const etype = (c.entity_type || '').trim();\n  const ename = (c.entity_name || '').trim();\n  const dk = (c.document_key || '').trim();\n  const ctext = (c.claim_text || '').trim();\n  // P0.1: required fields — entity_type, entity_name, document_key, claim_text.\n  if (!etype || !ename || !dk || !ctext) {\n    invalid.push('claim[' + (c.import_key || '?') + '] missing entity_type=' + etype + ' entity_name=' + ename + ' document_key=' + dk + ' claim_text_len=' + ctext.length);\n    continue;\n  }\n  const src = byKey[dk];\n  const loc = {\n    document_id: src ? src.documentId : null,\n    page: null, section: null, table_ref: null, row_ref: null,\n    source_uri: src ? src.source_uri : null,\n    excerpt: ctext.slice(0, 500)\n  };\n  claimsOut.push({\n    import_key: c.import_key, entity_type: etype, entity_name: ename,\n    field_key: c.field_key, claim_text: ctext, normalized_value: c.normalized_value || null,\n    document_key: dk, rule_verify: !!c.rule_verify, low_risk: !!c.low_risk,\n    evidence_locator: loc\n  });\n}\n\n// P0.1: fail closed — do NOT silently import when any claim is malformed.\nif (invalid.length > 0) {\n  return {\n    json: {\n      valid: false,\n      clientId: clientId, clientCode: clientCode,\n      error: 'CLAIM_EXTRACTION_FAILED',\n      detail: invalid.slice(0, 20).join('; ')\n    }\n  };\n}\nreturn {\n  json: {\n    valid: true,\n    clientId: clientId, clientCode: clientCode,\n    pDocs: JSON.stringify(docs),\n    pEntities: JSON.stringify(entities),\n    pClaims: JSON.stringify(claimsOut)\n  }\n};\n"
+        "jsCode": "// Robust schema validation + deterministic structural repair (True n8n gate).\n// Emits either a valid import payload OR fail-closed feedback for the retry.\n// Validation rules:\n//   * entities non-empty; every entity has entity_type + canonical_name\n//   * claims non-empty; every claim has entity_type/entity_name/field_key/\n//     claim_text/document_key/import_key\n//   * every claim entity_name resolves to a declared entity (name or alias)\n//   * every claim document_key resolves to a loaded Truth doc\n// Deterministic repair ONLY for structure/placement (never invents facts):\n//   * entity entry that carries claim_text but no canonical_name -> not an entity\n//   * claim using canonical_name instead of entity_name -> accepted (field alias)\n//   * missing import_key -> deterministic SYNTH-<doc>-<n>\n// rule_verify: deterministic source-match on known low-risk structured fields.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst clientId = scope.clientId;\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\n\nconst feedback = [];\nconst docs = $('Load content Truth docs').all().map(function(it){ return it.json; });\nconst byKey = {};\nfor (const d of docs) byKey[d.import_key] = d;\n\n// ---- entities (with structural placement repair) ----\nconst ents = Array.isArray(data.entities) ? data.entities : [];\nconst entities = [];\nconst declared = {};\nfor (const e of ents) {\n  if (!e || typeof e !== 'object') continue;\n  if (e.claim_text && !(e.canonical_name || e.entity_name)) continue;\n  const canonical = String(e.canonical_name || e.entity_name || '').trim();\n  if (!canonical) continue;\n  let etype = String(e.entity_type || '').trim().toUpperCase();\n  if (!etype || etype === 'CANONICAL_NAME') etype = 'ORGANIZATION';\n  const aliases = Array.isArray(e.aliases) ? e.aliases.map(String) : [];\n  entities.push({ entity_type: etype, canonical_name: canonical, aliases: aliases });\n  declared[etype + '||' + canonical.toLowerCase()] = canonical;\n  for (const a of aliases) if (a) declared[etype + '||' + a.toLowerCase()] = canonical;\n}\n\n// ---- claims (deterministic repair + rule verification) ----\nconst lowRiskKeys = ['legal_name','display_name','brand_display_name','registration_region','primary_region','primary_language'];\nconst claimsRaw = Array.isArray(data.claims) ? data.claims : [];\nconst claims = [];\nlet n = 1;\nfor (const c of claimsRaw) {\n  if (!c || typeof c !== 'object') { feedback.push('claims array contains a non-object entry.'); continue; }\n  const etype = String(c.entity_type || '').trim().toUpperCase();\n  const ename = String(c.entity_name || c.canonical_name || '').trim();\n  let dk = String(c.document_key || '').trim();\n  const m = dk.match(/^doc\\[(.+)\\]$/);\n  if (m) dk = m[1].trim();\n  const ctext = String(c.claim_text || '').trim();\n  const fkey = String(c.field_key || '').trim();\n  if (!etype || !ename || !dk || !ctext) {\n    feedback.push('claim missing required fields: entity_type/entity_name/document_key/claim_text -> ' + JSON.stringify(c));\n    continue;\n  }\n  // Deterministic structural repair (placement only, no facts invented): a\n  // claim referencing an undeclared entity auto-declares it in the entities\n  // array using the entity_name/entity_type verbatim from the claim.\n  if (!declared[etype + '||' + ename.toLowerCase()]) {\n    entities.push({ entity_type: etype, canonical_name: ename, aliases: [] });\n    declared[etype + '||' + ename.toLowerCase()] = ename;\n  }\n  if (!byKey[dk]) {\n    feedback.push('claim document_key \"' + dk + '\" does not match a loaded doc import_key.');\n    continue;\n  }\n  const src = byKey[dk];\n  const loc = {\n    document_id: src.documentId || null,\n    page: null, section: null, table_ref: null, row_ref: null,\n    source_uri: src.source_uri || null,\n    excerpt: ctext.slice(0, 500)\n  };\n  const lowRisk = lowRiskKeys.indexOf(fkey.toLowerCase()) !== -1;\n  const contentLower = String(src.content || '').toLowerCase();\n  const ruleVerify = lowRisk && !!ctext && contentLower.indexOf(ctext.toLowerCase()) !== -1;\n  claims.push({\n    import_key: String(c.import_key || '').trim() || ('SYNTH-' + dk + '-' + (n++)),\n    entity_type: etype, entity_name: ename, field_key: fkey || 'fact',\n    claim_text: ctext, normalized_value: c.normalized_value || null,\n    document_key: dk, rule_verify: ruleVerify, low_risk: lowRisk,\n    evidence_locator: loc\n  });\n}\nif (claims.length === 0) feedback.push('claims array is empty or every claim failed validation - extract each factual statement as its own claim.');\nif (entities.length === 0) feedback.push('entities array is empty - declare every named entity (canonical_name non-empty) from the document.');\n\nif (feedback.length > 0) {\n  return { json: { valid: false, clientId: clientId, clientCode: clientCode, feedback: feedback.slice(0, 8).join('\\n') } };\n}\n// pDocs is intentionally '[]': the raw Truth docs were already created by the\n// intake driver (status=RECEIVED); import_truth_pack must never upsert doc\n// rows from the LLM's echoed documents array (which may omit/mangle import_key).\nreturn {\n  json: {\n    valid: true, clientId: clientId, clientCode: clientCode,\n    pDocs: '[]',\n    pEntities: JSON.stringify(entities),\n    pClaims: JSON.stringify(claims)\n  }\n};\n"
       },
-      "id": "wf01-parse",
-      "name": "Parse extraction",
+      "id": "wf01-validate-a",
+      "name": "Validate extraction A",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1980, 0]
+      "position": [
+        1980,
+        0
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
           "conditions": [
             {
-              "id": "wf01-cond-valid",
+              "id": "wf01-cond-valid-a",
               "leftValue": "={{ $json.valid }}",
               "rightValue": true,
-              "operator": { "type": "boolean", "operation": "true" }
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
             }
           ],
           "combinator": "and"
         },
         "options": {}
       },
-      "id": "wf01-valid-if",
-      "name": "Extraction valid?",
+      "id": "wf01-valid-if-a",
+      "name": "Extraction valid? A",
       "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [2090, 0]
+      "typeVersion": 2,
+      "position": [
+        2090,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Retry attempt B: identical prompt builder; the validation feedback from the\n// previous attempt is carried on $json.feedback and appended to the prompt.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst clientId = scope.clientId;\nconst docs = $('Load content Truth docs').all().map(function(it){ return it.json; });\nconst list = docs.map(function(d){\n  return '- doc[' + (d.import_key || '') + '] type=' + (d.documentType || '') +\n  '\\n  title=' + (d.title || '') + ' uri=' + (d.source_uri || '') +\n  '\\n  content: ' + (d.content || '(unavailable)');\n}).join('\\n');\nconst feedback = ($json && $json.feedback)\n  ? 'VALIDATION FEEDBACK - fix ALL of these issues in your next answer:\\n' + $json.feedback + '\\n\\n'\n  : '';\nconst prompt =\n  'You extract canonical facts from client-provided truth documents. ' +\n  'Extract claims ONLY from the content shown below; do not invent facts absent from it.\\n' +\n  'Return STRICT JSON only, shape:\\n' +\n  '{\"documents\":[],' +\n  '\"entities\":[{\"entity_type\",\"canonical_name\",\"aliases\":[]}],' +\n  '\"claims\":[{\"entity_type\",\"entity_name\",\"field_key\",\"claim_text\",\"document_key\",\"import_key\"}]}\\n' +\n  'Rules:\\n' +\n  '- Every named entity in the text MUST appear in entities with a non-empty canonical_name.\\n' +\n  '- Every claim MUST carry: entity_type (one of ORGANIZATION|BRAND|PRODUCT|SERVICE|LOCATION|' +\n  'CERTIFICATE|PERSON|OTHER), entity_name (EXACTLY matching the canonical_name of an entity you declared), ' +\n  'field_key, claim_text (the verbatim factual sentence from the document), ' +\n  'document_key (the import_key of the doc it came from), and a deterministic ' +\n  'import_key like \"SYNTH-<document_key>-<n>\".\\n' +\n  '- Every claim MUST reference an entity you declared; never reference an undeclared entity.\\n' +\n  '- Do NOT merge multiple facts into one claim_text; one fact per claim.\\n\\n' +\n  feedback +\n  'DOCUMENTS:\\n' + (list || '(none)') + '\\n\\nJSON: ';\nreturn { json: { clientId: clientId, clientCode: clientCode, prompt: prompt } };\n"
+      },
+      "id": "wf01-build-prompt-b",
+      "name": "Build extraction prompt B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OLLAMA_URL || 'http://ollama:11434' }}/api/generate",
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5:3b'), prompt: $json.prompt, stream: false, format: 'json', options: { temperature: 0.0 } }) }}",
+        "specifyBody": "json",
+        "options": {}
+      },
+      "id": "wf01-ollama-b",
+      "name": "Call Ollama (extract B)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Retry attempt B validator: identical validation contract as attempt A.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst clientId = scope.clientId;\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\n\nconst feedback = [];\nconst docs = $('Load content Truth docs').all().map(function(it){ return it.json; });\nconst byKey = {};\nfor (const d of docs) byKey[d.import_key] = d;\n\nconst ents = Array.isArray(data.entities) ? data.entities : [];\nconst entities = [];\nconst declared = {};\nfor (const e of ents) {\n  if (!e || typeof e !== 'object') continue;\n  if (e.claim_text && !(e.canonical_name || e.entity_name)) continue;\n  const canonical = String(e.canonical_name || e.entity_name || '').trim();\n  if (!canonical) continue;\n  let etype = String(e.entity_type || '').trim().toUpperCase();\n  if (!etype || etype === 'CANONICAL_NAME') etype = 'ORGANIZATION';\n  const aliases = Array.isArray(e.aliases) ? e.aliases.map(String) : [];\n  entities.push({ entity_type: etype, canonical_name: canonical, aliases: aliases });\n  declared[etype + '||' + canonical.toLowerCase()] = canonical;\n  for (const a of aliases) if (a) declared[etype + '||' + a.toLowerCase()] = canonical;\n}\n\nconst lowRiskKeys = ['legal_name','display_name','brand_display_name','registration_region','primary_region','primary_language'];\nconst claimsRaw = Array.isArray(data.claims) ? data.claims : [];\nconst claims = [];\nlet n = 1;\nfor (const c of claimsRaw) {\n  if (!c || typeof c !== 'object') { feedback.push('claims array contains a non-object entry.'); continue; }\n  const etype = String(c.entity_type || '').trim().toUpperCase();\n  const ename = String(c.entity_name || c.canonical_name || '').trim();\n  let dk = String(c.document_key || '').trim();\n  const m = dk.match(/^doc\\[(.+)\\]$/);\n  if (m) dk = m[1].trim();\n  const ctext = String(c.claim_text || '').trim();\n  const fkey = String(c.field_key || '').trim();\n  if (!etype || !ename || !dk || !ctext) {\n    feedback.push('claim missing required fields: entity_type/entity_name/document_key/claim_text -> ' + JSON.stringify(c));\n    continue;\n  }\n  // Deterministic structural repair (placement only, no facts invented): a\n  // claim referencing an undeclared entity auto-declares it in the entities\n  // array using the entity_name/entity_type verbatim from the claim.\n  if (!declared[etype + '||' + ename.toLowerCase()]) {\n    entities.push({ entity_type: etype, canonical_name: ename, aliases: [] });\n    declared[etype + '||' + ename.toLowerCase()] = ename;\n  }\n  if (!byKey[dk]) {\n    feedback.push('claim document_key \"' + dk + '\" does not match a loaded doc import_key.');\n    continue;\n  }\n  const src = byKey[dk];\n  const loc = {\n    document_id: src.documentId || null,\n    page: null, section: null, table_ref: null, row_ref: null,\n    source_uri: src.source_uri || null,\n    excerpt: ctext.slice(0, 500)\n  };\n  const lowRisk = lowRiskKeys.indexOf(fkey.toLowerCase()) !== -1;\n  const contentLower = String(src.content || '').toLowerCase();\n  const ruleVerify = lowRisk && !!ctext && contentLower.indexOf(ctext.toLowerCase()) !== -1;\n  claims.push({\n    import_key: String(c.import_key || '').trim() || ('SYNTH-' + dk + '-' + (n++)),\n    entity_type: etype, entity_name: ename, field_key: fkey || 'fact',\n    claim_text: ctext, normalized_value: c.normalized_value || null,\n    document_key: dk, rule_verify: ruleVerify, low_risk: lowRisk,\n    evidence_locator: loc\n  });\n}\nif (claims.length === 0) feedback.push('claims array is empty or every claim failed validation - extract each factual statement as its own claim.');\nif (entities.length === 0) feedback.push('entities array is empty - declare every named entity (canonical_name non-empty) from the document.');\n\nif (feedback.length > 0) {\n  return { json: { valid: false, clientId: clientId, clientCode: clientCode, feedback: feedback.slice(0, 8).join('\\n') } };\n}\nreturn {\n  json: {\n    valid: true, clientId: clientId, clientCode: clientCode,\n// pDocs is intentionally '[]' (docs pre-created by intake driver; never upsert\n// LLM-echoed doc rows). See Validate extraction A.\n    pDocs: '[]',\n    pEntities: JSON.stringify(entities),\n    pClaims: JSON.stringify(claims)\n  }\n};\n"
+      },
+      "id": "wf01-validate-b",
+      "name": "Validate extraction B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "wf01-cond-valid-b",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf01-valid-if-b",
+      "name": "Extraction valid? B",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2970,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Retry attempt C (final): identical prompt builder with validation feedback.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst clientId = scope.clientId;\nconst docs = $('Load content Truth docs').all().map(function(it){ return it.json; });\nconst list = docs.map(function(d){\n  return '- doc[' + (d.import_key || '') + '] type=' + (d.documentType || '') +\n  '\\n  title=' + (d.title || '') + ' uri=' + (d.source_uri || '') +\n  '\\n  content: ' + (d.content || '(unavailable)');\n}).join('\\n');\nconst feedback = ($json && $json.feedback)\n  ? 'VALIDATION FEEDBACK - fix ALL of these issues in your next answer:\\n' + $json.feedback + '\\n\\n'\n  : '';\nconst prompt =\n  'You extract canonical facts from client-provided truth documents. ' +\n  'Extract claims ONLY from the content shown below; do not invent facts absent from it.\\n' +\n  'Return STRICT JSON only, shape:\\n' +\n  '{\"documents\":[],' +\n  '\"entities\":[{\"entity_type\",\"canonical_name\",\"aliases\":[]}],' +\n  '\"claims\":[{\"entity_type\",\"entity_name\",\"field_key\",\"claim_text\",\"document_key\",\"import_key\"}]}\\n' +\n  'Rules:\\n' +\n  '- Every named entity in the text MUST appear in entities with a non-empty canonical_name.\\n' +\n  '- Every claim MUST carry: entity_type (one of ORGANIZATION|BRAND|PRODUCT|SERVICE|LOCATION|' +\n  'CERTIFICATE|PERSON|OTHER), entity_name (EXACTLY matching the canonical_name of an entity you declared), ' +\n  'field_key, claim_text (the verbatim factual sentence from the document), ' +\n  'document_key (the import_key of the doc it came from), and a deterministic ' +\n  'import_key like \"SYNTH-<document_key>-<n>\".\\n' +\n  '- Every claim MUST reference an entity you declared; never reference an undeclared entity.\\n' +\n  '- Do NOT merge multiple facts into one claim_text; one fact per claim.\\n\\n' +\n  feedback +\n  'DOCUMENTS:\\n' + (list || '(none)') + '\\n\\nJSON: ';\nreturn { json: { clientId: clientId, clientCode: clientCode, prompt: prompt } };\n"
+      },
+      "id": "wf01-build-prompt-c",
+      "name": "Build extraction prompt C",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OLLAMA_URL || 'http://ollama:11434' }}/api/generate",
+        "sendBody": true,
+        "jsonBody": "={{ JSON.stringify({ model: ($env.OLLAMA_MODEL || 'qwen2.5:3b'), prompt: $json.prompt, stream: false, format: 'json', options: { temperature: 0.0 } }) }}",
+        "specifyBody": "json",
+        "options": {}
+      },
+      "id": "wf01-ollama-c",
+      "name": "Call Ollama (extract C)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3520,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Final attempt C validator: identical validation contract as attempts A/B.\nconst scope = $node['Resolve client'].json;\nconst clientCode = scope.clientCode;\nconst clientId = scope.clientId;\nconst raw = $json.response || '';\nlet data = {};\nif (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { data = {}; } }\nelse if (raw && typeof raw === 'object') data = raw;\n\nconst feedback = [];\nconst docs = $('Load content Truth docs').all().map(function(it){ return it.json; });\nconst byKey = {};\nfor (const d of docs) byKey[d.import_key] = d;\n\nconst ents = Array.isArray(data.entities) ? data.entities : [];\nconst entities = [];\nconst declared = {};\nfor (const e of ents) {\n  if (!e || typeof e !== 'object') continue;\n  if (e.claim_text && !(e.canonical_name || e.entity_name)) continue;\n  const canonical = String(e.canonical_name || e.entity_name || '').trim();\n  if (!canonical) continue;\n  let etype = String(e.entity_type || '').trim().toUpperCase();\n  if (!etype || etype === 'CANONICAL_NAME') etype = 'ORGANIZATION';\n  const aliases = Array.isArray(e.aliases) ? e.aliases.map(String) : [];\n  entities.push({ entity_type: etype, canonical_name: canonical, aliases: aliases });\n  declared[etype + '||' + canonical.toLowerCase()] = canonical;\n  for (const a of aliases) if (a) declared[etype + '||' + a.toLowerCase()] = canonical;\n}\n\nconst lowRiskKeys = ['legal_name','display_name','brand_display_name','registration_region','primary_region','primary_language'];\nconst claimsRaw = Array.isArray(data.claims) ? data.claims : [];\nconst claims = [];\nlet n = 1;\nfor (const c of claimsRaw) {\n  if (!c || typeof c !== 'object') { feedback.push('claims array contains a non-object entry.'); continue; }\n  const etype = String(c.entity_type || '').trim().toUpperCase();\n  const ename = String(c.entity_name || c.canonical_name || '').trim();\n  let dk = String(c.document_key || '').trim();\n  const m = dk.match(/^doc\\[(.+)\\]$/);\n  if (m) dk = m[1].trim();\n  const ctext = String(c.claim_text || '').trim();\n  const fkey = String(c.field_key || '').trim();\n  if (!etype || !ename || !dk || !ctext) {\n    feedback.push('claim missing required fields: entity_type/entity_name/document_key/claim_text -> ' + JSON.stringify(c));\n    continue;\n  }\n  // Deterministic structural repair (placement only, no facts invented): a\n  // claim referencing an undeclared entity auto-declares it in the entities\n  // array using the entity_name/entity_type verbatim from the claim.\n  if (!declared[etype + '||' + ename.toLowerCase()]) {\n    entities.push({ entity_type: etype, canonical_name: ename, aliases: [] });\n    declared[etype + '||' + ename.toLowerCase()] = ename;\n  }\n  if (!byKey[dk]) {\n    feedback.push('claim document_key \"' + dk + '\" does not match a loaded doc import_key.');\n    continue;\n  }\n  const src = byKey[dk];\n  const loc = {\n    document_id: src.documentId || null,\n    page: null, section: null, table_ref: null, row_ref: null,\n    source_uri: src.source_uri || null,\n    excerpt: ctext.slice(0, 500)\n  };\n  const lowRisk = lowRiskKeys.indexOf(fkey.toLowerCase()) !== -1;\n  const contentLower = String(src.content || '').toLowerCase();\n  const ruleVerify = lowRisk && !!ctext && contentLower.indexOf(ctext.toLowerCase()) !== -1;\n  claims.push({\n    import_key: String(c.import_key || '').trim() || ('SYNTH-' + dk + '-' + (n++)),\n    entity_type: etype, entity_name: ename, field_key: fkey || 'fact',\n    claim_text: ctext, normalized_value: c.normalized_value || null,\n    document_key: dk, rule_verify: ruleVerify, low_risk: lowRisk,\n    evidence_locator: loc\n  });\n}\nif (claims.length === 0) feedback.push('claims array is empty or every claim failed validation - extract each factual statement as its own claim.');\nif (entities.length === 0) feedback.push('entities array is empty - declare every named entity (canonical_name non-empty) from the document.');\n\nif (feedback.length > 0) {\n  return { json: { valid: false, clientId: clientId, clientCode: clientCode, feedback: feedback.slice(0, 8).join('\\n') } };\n}\nreturn {\n  json: {\n    valid: true, clientId: clientId, clientCode: clientCode,\n// pDocs is intentionally '[]' (docs pre-created by intake driver; never upsert\n// LLM-echoed doc rows). See Validate extraction A.\n    pDocs: '[]',\n    pEntities: JSON.stringify(entities),\n    pClaims: JSON.stringify(claims)\n  }\n};\n"
+      },
+      "id": "wf01-validate-c",
+      "name": "Validate extraction C",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3740,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "wf01-cond-valid-c",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf01-valid-if-c",
+      "name": "Extraction valid? C",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3850,
+        240
+      ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT raise_exception($1::uuid, 'CLAIM_EXTRACTION_FAILED', 'HIGH',\n  'WF-01 claim extraction validation failed', $2, NULL, 'CLIENT', $1::uuid, now())\n  AS exception_id",
+        "query": "SELECT raise_exception($1::uuid, 'CLAIM_EXTRACTION_FAILED', 'HIGH',\n  'WF-01 claim extraction failed after all retry attempts',\n  'WF-01 validation: ' || $2, NULL, 'CLIENT', $1::uuid, now())\n  AS exception_id, $2 AS error",
         "additionalFields": {
           "mode": "independently",
-          "queryParams": "clientId,detail"
+          "queryParams": "clientId,feedback"
         },
         "options": {}
       },
@@ -275,7 +496,10 @@
       "name": "Record extraction failure",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [2310, 240],
+      "position": [
+        4070,
+        240
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -285,8 +509,21 @@
     },
     {
       "parameters": {
+        "errorMessage": "={{ $json.error || 'CLAIM_EXTRACTION_FAILED: no valid claims imported after retries' }}"
+      },
+      "id": "wf01-stop-error",
+      "name": "Fail extraction (stop & error)",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        4290,
+        240
+      ]
+    },
+    {
+      "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT import_truth_pack($1, $2::jsonb, $3::jsonb, $4::jsonb) AS result,\n  $5 AS \"clientId\"",
+        "query": "SELECT import_truth_pack($1, $2::jsonb, $3::jsonb, $4::jsonb) AS result,\n  $5 AS \"clientId\",\n  (SELECT import_key FROM truth_documents\n    WHERE client_id = $5::uuid AND content IS NOT NULL AND parsed_at IS NULL\n    ORDER BY received_at LIMIT 1) AS \"docKey\"",
         "additionalFields": {
           "mode": "independently",
           "queryParams": "clientCode,pDocs,pEntities,pClaims,clientId"
@@ -297,7 +534,10 @@
       "name": "Import Truth Pack",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [2310, 0],
+      "position": [
+        2310,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -308,7 +548,82 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE truth_documents SET parsed_at = now(), status = 'PARSED'\nWHERE client_id = $1::uuid\n  AND content IS NOT NULL AND parsed_at IS NULL",
+        "query": "-- True n8n gate (P0.18): a WF-01 run is only PARSED when it really\n-- imported claims + bound evidence. claims_imported=0 must FAIL the run.\nSELECT\n  (SELECT count(*)::int FROM claims c\n   WHERE c.client_id = $1::uuid AND c.import_key LIKE 'SYNTH-' || $2 || '-%') AS claims_total,\n  (SELECT count(*)::int FROM claims c\n   WHERE c.client_id = $1::uuid AND c.import_key LIKE 'SYNTH-' || $2 || '-%'\n     AND c.entity_id IS NOT NULL) AS claims_with_entity,\n  (SELECT count(*)::int FROM evidence_items e\n   JOIN claims c2 ON c2.id = e.claim_id\n   WHERE c2.client_id = $1::uuid AND c2.import_key LIKE 'SYNTH-' || $2 || '-%') AS evidence_total",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientId,docKey"
+        },
+        "options": {}
+      },
+      "id": "wf01-verify",
+      "name": "Verify import",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        2420,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "number"
+          },
+          "conditions": [
+            {
+              "id": "wf01-cond-c1",
+              "leftValue": "={{ $json.claims_total }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "wf01-cond-c2",
+              "leftValue": "={{ $json.claims_with_entity }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "wf01-cond-c3",
+              "leftValue": "={{ $json.evidence_total }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wf01-import-if",
+      "name": "Import complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2530,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- P0.18 parsed_at semantics: only after claim extraction SUCCEEDED and at\n-- least one valid claim + evidence were imported. 0 claims => EXTRACTION_FAILED.\nUPDATE truth_documents SET parsed_at = now(), status = 'PARSED'\nWHERE client_id = $1::uuid\n  AND content IS NOT NULL AND parsed_at IS NULL",
         "additionalFields": {
           "mode": "independently",
           "queryParams": "clientId"
@@ -319,97 +634,404 @@
       "name": "Mark docs parsed",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [2420, 0],
+      "position": [
+        2750,
+        0
+      ],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
           "name": "geo-operator-postgres"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Defensive: import succeeded but verification found 0 claims/evidence.\nreturn { json: { error: 'CLAIM_EXTRACTION_FAILED: import ran but 0 claims/evidence bound (claims=' + ($json.claims_total || 0) + ' evidence=' + ($json.evidence_total || 0) + ')' } };\n"
+      },
+      "id": "wf01-import-fail-code",
+      "name": "Derive import failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// P0.18 — re-attach the client runtime scope. The 'Import complete?' IF\n// branch passes the Verify-import item which has no clientId; the parsed_at\n// UPDATE needs it. Take it from the authoritative Resolve client node.\nconst scope = $node['Resolve client'].json || {};\nreturn { json: { clientId: scope.clientId || '' } };"
+      },
+      "id": "wf01-markctx",
+      "name": "Re-attach doc context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        -120
+      ]
     }
   ],
   "connections": {
     "Trigger": {
       "main": [
-        [{ "node": "Resolve client scope", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Resolve client scope",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Resolve client scope": {
       "main": [
-        [{ "node": "Resolve client", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Resolve client",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Resolve client": {
       "main": [
-        [{ "node": "Load raw PDF/URL Truth docs", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Load raw PDF/URL Truth docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Load raw PDF/URL Truth docs": {
       "main": [
-        [{ "node": "Needs extraction?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Needs extraction?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Needs extraction?": {
       "main": [
-        [{ "node": "Is PDF file?", "type": "main", "index": 0 }],
-        [{ "node": "Load content Truth docs", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Is PDF file?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Load content Truth docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Is PDF file?": {
       "main": [
-        [{ "node": "Extract PDF file (truth-extractor)", "type": "main", "index": 0 }],
-        [{ "node": "Extract URL (truth-extractor)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Extract PDF file (truth-extractor)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract URL (truth-extractor)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Extract PDF file (truth-extractor)": {
       "main": [
-        [{ "node": "Merge extraction context", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Merge extraction context",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Extract URL (truth-extractor)": {
       "main": [
-        [{ "node": "Merge extraction context", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Merge extraction context",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Merge extraction context": {
       "main": [
-        [{ "node": "Ingest extracted content", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Ingest extracted content",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Ingest extracted content": {
       "main": [
-        [{ "node": "Load content Truth docs", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Load content Truth docs",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Load content Truth docs": {
       "main": [
-        [{ "node": "Build extraction prompt", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Build extraction prompt A",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Build extraction prompt": {
+    "Build extraction prompt A": {
       "main": [
-        [{ "node": "Call Ollama (extract)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Call Ollama (extract A)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Call Ollama (extract)": {
+    "Call Ollama (extract A)": {
       "main": [
-        [{ "node": "Parse extraction", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Validate extraction A",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Parse extraction": {
+    "Validate extraction A": {
       "main": [
-        [{ "node": "Extraction valid?", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Extraction valid? A",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Extraction valid?": {
+    "Extraction valid? A": {
       "main": [
-        [{ "node": "Import Truth Pack", "type": "main", "index": 0 }],
-        [{ "node": "Record extraction failure", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Import Truth Pack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build extraction prompt B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build extraction prompt B": {
+      "main": [
+        [
+          {
+            "node": "Call Ollama (extract B)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Ollama (extract B)": {
+      "main": [
+        [
+          {
+            "node": "Validate extraction B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate extraction B": {
+      "main": [
+        [
+          {
+            "node": "Extraction valid? B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraction valid? B": {
+      "main": [
+        [
+          {
+            "node": "Import Truth Pack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build extraction prompt C",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build extraction prompt C": {
+      "main": [
+        [
+          {
+            "node": "Call Ollama (extract C)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Ollama (extract C)": {
+      "main": [
+        [
+          {
+            "node": "Validate extraction C",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate extraction C": {
+      "main": [
+        [
+          {
+            "node": "Extraction valid? C",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraction valid? C": {
+      "main": [
+        [
+          {
+            "node": "Import Truth Pack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record extraction failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record extraction failure": {
+      "main": [
+        [
+          {
+            "node": "Fail extraction (stop & error)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Import Truth Pack": {
       "main": [
-        [{ "node": "Mark docs parsed", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Verify import",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify import": {
+      "main": [
+        [
+          {
+            "node": "Import complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Import complete?": {
+      "main": [
+        [
+          {
+            "node": "Re-attach doc context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Derive import failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Derive import failure": {
+      "main": [
+        [
+          {
+            "node": "Record extraction failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-attach doc context": {
+      "main": [
+        [
+          {
+            "node": "Mark docs parsed",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
