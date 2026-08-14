@@ -190,7 +190,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// P0.12 — interpret the Fact + Compliance gate result. A job is only finished\n// (SUCCEEDED) when BOTH gates PASSED. Otherwise the business action is clearly\n// BLOCKED / QA_REQUIRED and the job is failed, never silently SUCCEEDED.\nconst entry = $node['Resolve scope'].json;\nconst aStore = $node['Store content asset (draft)'].json;\nconst raw = $json.gate;\nlet gate = raw;\nif (typeof raw === 'string') { try { gate = JSON.parse(raw); } catch (e) { gate = {}; } }\ngate = gate || {};\nconst factCheck = gate.fact_check || 'BLOCKED';\nconst compliance = gate.compliance || 'BLOCKED';\nconst passed = factCheck === 'PASSED' && compliance === 'PASSED';\nreturn {\n  json: {\n    jobId: entry.jobId,\n    assetId: aStore.asset_id || null,\n    factCheck: factCheck,\n    compliance: compliance,\n    passed: passed,\n    error: passed ? '' : 'CONTENT_QA_FAILED: fact=' + factCheck + ' compliance=' + compliance\n  }\n};\n"
+        "jsCode": "// P0.12 — interpret the Fact + Compliance gate result. A job is only finished\n// (SUCCEEDED) when BOTH gates PASSED. Otherwise the business action is clearly\n// BLOCKED / QA_REQUIRED and the job is failed, never silently SUCCEEDED.\nconst entry = $node['Resolve scope'].json;\nconst aStore = $node['Store content asset (draft)'].json;\nconst raw = $json.gate;\nlet gate = raw;\nif (typeof raw === 'string') { try { gate = JSON.parse(raw); } catch (e) { gate = {}; } }\ngate = gate || {};\nconst factCheck = gate.fact_check || 'BLOCKED';\nconst compliance = gate.compliance || 'BLOCKED';\nconst passed = factCheck === 'PASSED' && compliance === 'PASSED';\nreturn {\n  json: {\n    clientCode: entry.clientCode,\n    jobId: entry.jobId,\n    assetId: aStore.asset_id || null,\n    factCheck: factCheck,\n    compliance: compliance,\n    passed: passed,\n    error: passed ? '' : 'CONTENT_QA_FAILED: fact=' + factCheck + ' compliance=' + compliance\n  }\n};\n"
       },
       "id": "wf06-interpret",
       "name": "Interpret gate result",
@@ -223,6 +223,28 @@
     {
       "parameters": {
         "operation": "executeQuery",
+        "query": "-- P0.14/15/16: close the gated canonical asset to publication. For each target\n-- surface this adapts a per-surface DRAFT, re-runs Fact + Compliance, and only a\n-- PASSED asset becomes a publication task + enqueued PUBLICATION job (WF-07).\nSELECT close_content_to_publication($1, $2::uuid) AS closure",
+        "additionalFields": {
+          "mode": "independently",
+          "queryParams": "clientCode,assetId"
+        },
+        "options": {}
+      },
+      "id": "wf06-close",
+      "name": "Close to publication",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [3080, 0],
+      "credentials": {
+        "postgres": {
+          "id": "QfC91xNjDOUTMtPB",
+          "name": "geo-operator-postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
         "query": "SELECT finish_job($1::uuid)",
         "additionalFields": {
           "mode": "independently",
@@ -234,7 +256,7 @@
       "name": "Finish job",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [3080, 0],
+      "position": [3300, 0],
       "credentials": {
         "postgres": {
           "id": "QfC91xNjDOUTMtPB",
@@ -339,8 +361,13 @@
     },
     "Gate passed?": {
       "main": [
-        [{ "node": "Finish job", "type": "main", "index": 0 }],
+        [{ "node": "Close to publication", "type": "main", "index": 0 }],
         [{ "node": "Fail job (QA blocked)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Close to publication": {
+      "main": [
+        [{ "node": "Finish job", "type": "main", "index": 0 }]
       ]
     }
   },
