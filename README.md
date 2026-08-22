@@ -23,7 +23,7 @@ GEO Operator V2 是本地运行的内部 GEO 服务执行工具。它负责多�
 - 真实平台校准证据持久化：仅保存可见 DOM 结构属性，不读取正文、Cookie 或浏览器存储；支持人工切换菜单/确认框后继续结构采样
 - Mock AI 故障注入，以及 KZQ 10 问完整验收
 
-九个平台已进入统一平台目录、任务校验、Session、插件注册、API 和本地控制台：国内为豆包、元宝、千问、DeepSeek、Kimi，国外为 Grok、Gemini、ChatGPT、Perplexity。除千问外的八个平台均已完成真实登录、流式回答实时保存与校准会话删除验证并进入 `EXECUTION_READY`。Perplexity 实测保存 20 个长流式 checkpoint，观察到独立用户/助手容器、“停止响应（Esc）”控件、最终回答操作区和 UUID 会话 URL，并验证删除确认框、目标历史项 1→0 及登录首页健康。千问已完成登录、发送、用户/回答容器、流式完成标记和实时保存的真实结构校准，但固定问题返回平台“系统超时”，停止控件与聊天删除尚未完成，因此仍为 `CALIBRATION_REQUIRED`。Claude（包括 Claude/Anthropic 常见标识）是明确禁止的平台，不创建插件、不开放 Session，也不接受任务包。
+九个平台保留在统一平台目录、任务校验和状态模型中：国内为豆包、元宝、千问、DeepSeek、Kimi，国外为 Grok、Gemini、ChatGPT、Perplexity。除千问外的八个平台均已完成真实登录、流式回答实时保存与校准会话删除验证并进入 `EXECUTION_READY`。Perplexity 实测保存 20 个长流式 checkpoint，观察到独立用户/助手容器、“停止响应（Esc）”控件、最终回答操作区和 UUID 会话 URL，并验证删除确认框、目标历史项 1→0 及登录首页健康。千问因自动发送持续触发 Baxia 跨域滑块、人工验证无法完成且平台随后返回“系统超时”，已按操作者决定标记为 `INTEGRATION_PAUSED`：Session 打开、结构校准和 Worker 调度全部关闭，禁止继续重试或自动绕过。Claude（包括 Claude/Anthropic 常见标识）是明确禁止的平台，不创建插件、不开放 Session，也不接受任务包。
 
 ## 安装
 
@@ -86,7 +86,7 @@ uv run python scripts/create_kzq_test_package.py `
   --output KZQ_GEO_TASK_PACKAGE.zip
 ```
 
-`--platform` 接受九个平台的规范 ID；当前除 `qwen` 外均为 `EXECUTION_READY`，千问导入任务后仍会被校准门禁阻止真实调度。导入后必须先批准客户档案，再批准 `TASK_EXECUTION`。所有任务完成后申请并批准 `RESULT_EXPORT`，才能导出 `RESULT_PACKAGE.zip`。
+`--platform` 接受九个平台的规范 ID；当前除 `qwen` 外均为 `EXECUTION_READY`。千问为 `INTEGRATION_PAUSED`，即使任务包包含千问任务也禁止打开 Session 或进入 Worker 调度。导入后必须先批准客户档案，再批准 `TASK_EXECUTION`。所有任务完成后申请并批准 `RESULT_EXPORT`，才能导出 `RESULT_PACKAGE.zip`。
 
 ## 验证
 
@@ -108,4 +108,4 @@ uv run pytest -q
 
 ## 真实平台上线前校准
 
-所有平台选择器只能来自已观察的真实页面和官方前端资源。平台状态分为 `EXECUTION_READY` 与 `CALIBRATION_REQUIRED`；后者可人工登录和采集不含正文、Cookie、存储数据的结构快照，但禁止 Worker 发送问题。豆包虚拟列表不使用消息总数判定关联，而是校验末条助手回答在末条用户问题之后。任何无法唯一识别、信号冲突、登录失效或安全验证都会进入 `PAUSED`，禁止自动绕过。明确禁止 Claude：不得新增 Claude/Anthropic 插件、Session 入口、任务平台或兼容别名。
+所有平台选择器只能来自已观察的真实页面和官方前端资源。平台状态分为 `EXECUTION_READY`、`CALIBRATION_REQUIRED` 与 `INTEGRATION_PAUSED`；暂停接入的平台禁止 Session 打开、校准和 Worker 调度，只有操作者明确恢复后才能重新进入校准流程。豆包虚拟列表不使用消息总数判定关联，而是校验末条助手回答在末条用户问题之后。任何无法唯一识别、信号冲突、登录失效或安全验证都会进入 `PAUSED`，禁止自动绕过。明确禁止 Claude：不得新增 Claude/Anthropic 插件、Session 入口、任务平台或兼容别名。

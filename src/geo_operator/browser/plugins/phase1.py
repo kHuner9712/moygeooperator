@@ -97,7 +97,21 @@ class ObservedWebChatPlugin:
 
     async def detect_human_intervention(self, page: Any) -> str | None:
         body = (await page.locator("body").inner_text()).lower()
+        if await self._any_visible(
+            page,
+            ("iframe#baxia-dialog-content", ".baxia-dialog .baxia-dialog-mask"),
+        ):
+            return "CAPTCHA"
+
         patterns = (
+            (
+                (
+                    "\u62d6\u52a8\u4e0b\u65b9\u6ed1\u5757\u5b8c\u6210\u9a8c\u8bc1",
+                    "\u62d6\u52a8\u6ed1\u5757",
+                    "\u6309\u4f4f\u6ed1\u5757",
+                ),
+                "CAPTCHA",
+            ),
             (("captcha", "验证码"), "CAPTCHA"),
             (("security check", "安全验证", "验证身份"), "SECURITY_CHALLENGE"),
             (("too many requests", "rate limit", "请求过于频繁"), "RATE_LIMITED"),

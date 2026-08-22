@@ -137,9 +137,14 @@ class PlatformPolicyTestCase(unittest.TestCase):
                 plugin = live_plugin(platform)
                 status = plugin.calibration_status()
                 self.assertFalse(plugin.calibration_complete)
-                self.assertEqual(status["support_status"], "CALIBRATION_REQUIRED")
+                expected_status = (
+                    "INTEGRATION_PAUSED" if platform == "qwen" else "CALIBRATION_REQUIRED"
+                )
+                self.assertEqual(status["support_status"], expected_status)
                 self.assertFalse(status["dispatch_eligible"])
                 if platform == "qwen":
+                    self.assertTrue(status["integration_paused"])
+                    self.assertEqual(status["pause_reason"], "MANUAL_VERIFICATION_UNAVAILABLE")
                     self.assertNotIn("send_controls", status["missing"])
                 else:
                     self.assertIn("send_controls", status["missing"])

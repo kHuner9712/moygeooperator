@@ -150,7 +150,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "label": definition.label,
                     "region": definition.region,
                     "home_url": definition.home_url,
-                    "policy": "ALLOWED",
+                    "policy": ("PAUSED" if status.get("integration_paused") else "ALLOWED"),
                 }
             )
             statuses.append(status)
@@ -256,7 +256,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-
     @app.post("/api/tenants/{tenant_id}/sources", status_code=201)
     async def upload_source(tenant_id: str, request: Request) -> dict[str, Any]:
         try:
@@ -276,18 +275,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/api/tenants/{tenant_id}/website-crawls", status_code=201)
-    async def crawl_website(
-        tenant_id: str, body: WebsiteCrawlRequest
-    ) -> dict[str, Any]:
+    async def crawl_website(tenant_id: str, body: WebsiteCrawlRequest) -> dict[str, Any]:
         try:
             return await websites.crawl(tenant_id, body.start_url, body.max_pages)
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/api/tenants/{tenant_id}/website-pages")
-    def list_website_pages(
-        tenant_id: str, crawl_id: str | None = None
-    ) -> list[dict[str, Any]]:
+    def list_website_pages(tenant_id: str, crawl_id: str | None = None) -> list[dict[str, Any]]:
         try:
             require_tenant(tenant_id)
             return websites.list(tenant_id, crawl_id)
@@ -331,8 +326,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if execution["platform"] != "mock":
                 plugin = live_plugin(execution["platform"])
                 if not plugin.calibration_complete:
+                    support_status = plugin.calibration_status()["support_status"]
                     raise ValueError(
-                        f"{execution['platform']} is CALIBRATION_REQUIRED; "
+                        f"{execution['platform']} is {support_status}; "
                         "real task dispatch is disabled"
                     )
             return {"status": "queued_for_independent_worker", "execution_id": execution_id}
@@ -414,6 +410,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             require_tenant(body.tenant_id)
             plugin = live_plugin(body.platform)
+            if getattr(plugin, "integration_paused", False):
+                raise ValueError(f"{plugin.name} integration is paused")
             manual_logins.open(body.tenant_id, body.platform, body.account_id, plugin.home_url)
             return {
                 "status": "WAIT_MANUAL_LOGIN",
@@ -436,6 +434,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             require_tenant(body.tenant_id)
             plugin = live_plugin(body.platform)
+            if getattr(plugin, "integration_paused", False):
+                raise ValueError(f"{plugin.name} integration is paused")
             target_url = body.target_url
             if target_url and body.preserve_current_page:
                 raise ValueError("target_url and preserve_current_page cannot be combined")
@@ -573,7 +573,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "captured_at": utc_now(),
             }
             artifacts.atomic_write(
-                body.tenant_id, relative,
+                body.tenant_id,
+                relative,
                 json.dumps(snapshot, ensure_ascii=False, indent=2).encode(),
             )
             with database.transaction() as connection:
@@ -583,8 +584,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                        relative_path,privacy,created_at)
                        VALUES (?,?,?,?,?,?,?,?,?,?)""",
                     (
-                        calibration_id, body.tenant_id, body.platform, body.account_id,
-                        body.stage, page.url, origin, relative, privacy, utc_now(),
+                        calibration_id,
+                        body.tenant_id,
+                        body.platform,
+                        body.account_id,
+                        body.stage,
+                        page.url,
+                        origin,
+                        relative,
+                        privacy,
+                        utc_now(),
                     ),
                 )
             return {
@@ -686,15 +695,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (ValueError, KeyError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-
     @app.post("/api/tenants/{tenant_id}/discovery/collect-url", status_code=201)
-    async def collect_evidence_url(
-        tenant_id: str, body: DiscoveryURLRequest
-    ) -> dict[str, object]:
+    async def collect_evidence_url(tenant_id: str, body: DiscoveryURLRequest) -> dict[str, object]:
         try:
-            return await discovery.collect_url(
-                tenant_id, body.source_url, body.source_type
-            )
+            return await discovery.collect_url(tenant_id, body.source_url, body.source_type)
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:

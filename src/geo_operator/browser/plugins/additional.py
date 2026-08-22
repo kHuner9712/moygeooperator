@@ -102,6 +102,7 @@ class QwenPlugin(CalibrationPendingPlugin):
     name = "qwen"
     home_url = "https://www.qianwen.com/"
     observed_at = "2026-08-23"
+    integration_paused = True
     conversation_link_selectors = ("a[href*='/chat/']",)
     conversation_path_prefixes = ("/chat/",)
     selectors = PhaseOneSelectors(
@@ -120,6 +121,18 @@ class QwenPlugin(CalibrationPendingPlugin):
         ),
         final_response_descendants=("#qk-markdown-react.qk-markdown-complete",),
     )
+
+    def calibration_status(self) -> dict[str, object]:
+        status = super().calibration_status()
+        status.update(
+            {
+                "support_status": "INTEGRATION_PAUSED",
+                "dispatch_eligible": False,
+                "integration_paused": True,
+                "pause_reason": "MANUAL_VERIFICATION_UNAVAILABLE",
+            }
+        )
+        return status
 
     def is_conversation_url(self, value: str) -> bool:
         if not super().is_conversation_url(value):

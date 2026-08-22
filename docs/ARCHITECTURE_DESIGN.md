@@ -158,6 +158,7 @@ data/tenants/{tenant_id}/
 新增平台分两级：
 
 - `CALIBRATION_REQUIRED`：仅开放官方入口人工登录、独立 persistent Session 和隐私安全的结构快照；Worker 调度门禁关闭。
+- `INTEGRATION_PAUSED`：因验证、账号或平台限制由操作者暂停；登录、校准与 Worker 调度全部关闭，只有明确人工授权才能恢复到校准状态。
 - `EXECUTION_READY`：回答完成信号、实时保存、幂等恢复、删除及删除确认均经真实账号验证，才允许执行任务。
 
 真实平台插件开发前，必须先通过模拟平台的状态机、崩溃恢复和保存测试。

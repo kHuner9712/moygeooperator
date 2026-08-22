@@ -270,6 +270,41 @@ class PhaseOnePluginAsyncTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(reason, "CAPTCHA")
 
+    async def test_qwen_slider_challenge_is_classified_as_captcha(self) -> None:
+        class SliderBodyLocator:
+            async def inner_text(self) -> str:
+                return (
+                    "\u4eb2\uff0c\u8bf7\u62d6\u52a8\u4e0b\u65b9\u6ed1\u5757\u5b8c\u6210\u9a8c\u8bc1 "
+                    "\u901a\u8fc7\u9a8c\u8bc1\u4ee5\u786e\u4fdd\u6b63\u5e38\u8bbf\u95ee"
+                )
+
+        class SliderBodyPage:
+            def locator(self, selector: str) -> SliderBodyLocator:
+                if selector != "body":
+                    raise AssertionError(selector)
+                return SliderBodyLocator()
+
+        reason = await _CaptchaDetectionPlugin().detect_human_intervention(SliderBodyPage())
+
+        self.assertEqual(reason, "CAPTCHA")
+
+    async def test_qwen_baxia_iframe_is_classified_as_captcha(self) -> None:
+        class EmptyBody:
+            async def inner_text(self) -> str:
+                return ""
+
+        class BodyPage:
+            def locator(self, selector: str) -> EmptyBody:
+                return EmptyBody()
+
+        class BaxiaPlugin(QwenPlugin):
+            async def _any_visible(self, page, selectors) -> bool:
+                return "iframe#baxia-dialog-content" in selectors
+
+        reason = await BaxiaPlugin().detect_human_intervention(BodyPage())
+
+        self.assertEqual(reason, "CAPTCHA")
+
 
 if __name__ == "__main__":
     unittest.main()

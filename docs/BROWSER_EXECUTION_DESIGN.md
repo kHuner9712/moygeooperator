@@ -172,4 +172,4 @@ Playwright 管理的 headed Chrome 必须显式设置 chromium_sandbox=True；�
 - 国外：Grok、Gemini、ChatGPT、Perplexity。
 - 明确禁止：Claude/Anthropic。任务导入、Session、插件解析和控制台不得出现可用入口。
 
-ChatGPT、豆包、DeepSeek、Gemini、元宝、Kimi、Grok、Perplexity 为 `EXECUTION_READY`；千问保持 `CALIBRATION_REQUIRED`。千问只允许人工登录与隐私安全的结构快照，API 的普通执行入口必须拒绝，Worker Supervisor 即使直接发现已批准任务也必须在打开浏览器前以 `PAGE_ABNORMAL + PLUGIN_CALIBRATION_REQUIRED` 失败关闭。只有插件全链路真实校准完成并通过回归测试后，才能解除调度门禁。Perplexity 的上线证据包括 20 次长流式 checkpoint、`停止响应（Esc）` 控件、最终回答操作区、UUID 会话 URL、删除确认框以及目标历史项 1→0 的真实验证；重新打开保存会话时必须等待用户/助手结构 hydration，禁止固定短暂停顿。
+ChatGPT、豆包、DeepSeek、Gemini、元宝、Kimi、Grok、Perplexity 为 `EXECUTION_READY`；千问为 `INTEGRATION_PAUSED`。千问插件必须保持 `dispatch_eligible=false`，平台 API 返回 `policy=PAUSED`，系统 Chrome 登录、结构校准和 Worker 调度入口均失败关闭；现有 Baxia iframe 与滑块文案识别仍保留为通用 `CAPTCHA` 人工暂停规则，禁止自动绕过。只有操作者明确授权恢复后，才能重新进入 `CALIBRATION_REQUIRED` 流程。Perplexity 的上线证据包括 20 次长流式 checkpoint、`停止响应（Esc）` 控件、最终回答操作区、UUID 会话 URL、删除确认框以及目标历史项 1→0 的真实验证；重新打开保存会话时必须等待用户/助手结构 hydration，禁止固定短暂停顿。

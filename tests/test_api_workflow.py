@@ -108,11 +108,16 @@ class ApiWorkflowTestCase(unittest.TestCase):
         }
         self.assertTrue(
             all(
-                platforms[platform]["support_status"] == "CALIBRATION_REQUIRED"
+                platforms[platform]["support_status"]
+                in {"CALIBRATION_REQUIRED", "INTEGRATION_PAUSED"}
                 for platform in pending
             )
         )
         self.assertTrue(all(not platforms[platform]["dispatch_eligible"] for platform in pending))
+        self.assertEqual(platforms["qwen"]["support_status"], "INTEGRATION_PAUSED")
+        self.assertEqual(platforms["qwen"]["policy"], "PAUSED")
+        self.assertTrue(platforms["qwen"]["integration_paused"])
+        self.assertEqual(platforms["qwen"]["pause_reason"], "MANUAL_VERIFICATION_UNAVAILABLE")
 
     def test_execution_actions_are_filtered_by_state(self) -> None:
         html = self.client.get("/").text
@@ -147,6 +152,26 @@ class ApiWorkflowTestCase(unittest.TestCase):
         )
         self.assertEqual(prohibited.status_code, 422)
         self.assertIn("explicitly prohibited", prohibited.json()["detail"])
+        paused = self.client.post(
+            "/api/sessions/open",
+            json={
+                "tenant_id": self.tenant["id"],
+                "platform": "qwen",
+                "account_id": "manual",
+            },
+        )
+        self.assertEqual(paused.status_code, 422)
+        self.assertIn("integration is paused", paused.json()["detail"])
+        paused_snapshot = self.client.post(
+            "/api/sessions/calibration-snapshot",
+            json={
+                "tenant_id": self.tenant["id"],
+                "platform": "qwen",
+                "account_id": "manual",
+            },
+        )
+        self.assertEqual(paused_snapshot.status_code, 422)
+        self.assertIn("integration is paused", paused_snapshot.json()["detail"])
         unsupported = self.client.post(
             "/api/sessions/calibration-snapshot",
             json={
