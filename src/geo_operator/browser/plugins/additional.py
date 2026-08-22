@@ -140,20 +140,62 @@ class QwenPlugin(CalibrationPendingPlugin):
         )
 
 
-class GeminiPlugin(CalibrationPendingPlugin):
+class GeminiPlugin(ObservedWebChatPlugin):
     phase = 2
     name = "gemini"
+    observed_at = "2026-08-23"
+    deletion_action_verified = True
     home_url = "https://gemini.google.com/app"
     conversation_link_selectors = ("a[href^='/app/']",)
     conversation_path_prefixes = ("/app/",)
     selectors = PhaseOneSelectors(
         login_indicators=("a:has-text('Sign in')", "button:has-text('Sign in')"),
         prompt_inputs=(
+            "div.ql-editor[contenteditable='true'][role='textbox']",
             "rich-textarea [contenteditable='true']",
             "div.ql-editor[contenteditable='true']",
         ),
-        send_controls=(),
+        send_controls=(
+            "input-container .send-button button",
+            "input-container button[aria-label='发送']",
+        ),
+        user_queries=("user-query-content .query-text",),
+        responses=(
+            "structured-content-container.model-response-text .markdown.markdown-main-panel",
+        ),
+        streaming_indicators=(
+            "pending-response",
+            "input-container .send-button.stop button[aria-label='停止回答']",
+        ),
+        stop_controls=(
+            "input-container .send-button.stop button[aria-label='停止回答']",
+        ),
+        conversation_menu_controls=("conversation-actions-icon button",),
+        delete_controls=("[role='menuitem']:has-text('删除')",),
+        delete_confirm_controls=("[role='dialog'] button:has-text('删除')",),
     )
+
+    def is_conversation_url(self, value: str) -> bool:
+        if not super().is_conversation_url(value):
+            return False
+        conversation_id = urlsplit(value).path.removeprefix("/app/").strip("/")
+        return len(conversation_id) == 16 and all(
+            character in "0123456789abcdef" for character in conversation_id.lower()
+        )
+
+    async def delete_chat(self, page: object) -> None:
+        if not self.is_conversation_url(page.url):
+            raise PluginPageAbnormal("Gemini delete requires a conversation URL")
+        self._deleting_conversation_path = urlsplit(page.url).path
+        await super().delete_chat(page)
+
+    async def verify_chat_deleted(self, page: object) -> bool:
+        path = getattr(self, "_deleting_conversation_path", None)
+        if not isinstance(path, str) or not path.startswith("/app/"):
+            return False
+        if not await super().verify_chat_deleted(page):
+            return False
+        return await page.locator(f"a[href='{path}']").count() == 0
 
 
 class YuanbaoPlugin(CalibrationPendingPlugin):

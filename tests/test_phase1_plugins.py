@@ -2,7 +2,7 @@ import unittest
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from geo_operator.browser.plugins.additional import DeepSeekPlugin, QwenPlugin
+from geo_operator.browser.plugins.additional import DeepSeekPlugin, GeminiPlugin, QwenPlugin
 from geo_operator.browser.plugins.base import SideEffectNotAttempted
 from geo_operator.browser.plugins.phase1 import ChatGPTPlugin, DoubaoPlugin
 
@@ -43,8 +43,10 @@ class _HydrationPage:
     def __init__(self) -> None:
         self.arg = None
         self.timeout = None
+        self.expression = None
 
-    async def wait_for_function(self, expression, *, arg, timeout):
+    async def wait_for_function(self, expression, *, arg=None, timeout):
+        self.expression = expression
         self.arg = arg
         self.timeout = timeout
         return _HydrationSignal()
@@ -136,6 +138,22 @@ class PhaseOnePluginContractTestCase(unittest.TestCase):
             )
         )
 
+    def test_gemini_real_calibration_contract_is_complete(self) -> None:
+        plugin = GeminiPlugin()
+        self.assertTrue(plugin.response_capture_calibration_complete)
+        self.assertTrue(plugin.deletion_calibration_complete)
+        self.assertTrue(plugin.calibration_complete)
+        self.assertEqual(plugin.calibration_status()["support_status"], "EXECUTION_READY")
+        self.assertIn("pending-response", plugin.selectors.streaming_indicators)
+        self.assertIn(
+            "input-container .send-button.stop button[aria-label='停止回答']",
+            plugin.selectors.stop_controls,
+        )
+        self.assertTrue(
+            plugin.is_conversation_url("https://gemini.google.com/app/2f6968edf862d914")
+        )
+        self.assertFalse(plugin.is_conversation_url("https://gemini.google.com/app/not-a-chat"))
+
     def test_doubao_normalizes_only_cjk_ascii_boundary_spacing(self) -> None:
         plugin = DoubaoPlugin()
         rendered = "\u8bf7\u4ece 1 \u5230 80 \u4e2d\u9009\u62e9 GEO Operator"
@@ -190,6 +208,14 @@ class PhaseOnePluginAsyncTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "COMPOSER_READY")
         self.assertEqual(page.arg["promptInputs"], list(plugin.selectors.prompt_inputs))
         self.assertEqual(page.timeout, 30_000)
+
+    async def test_conversation_hydration_includes_gemini_structure(self) -> None:
+        plugin = GeminiPlugin()
+        page = _HydrationPage()
+
+        await plugin.wait_for_calibration_hydration(page)
+
+        self.assertIn("model-response", page.expression)
 
     async def test_missing_response_after_confirmed_query_remains_incomplete(self) -> None:
         observation = await _ObservationDoubaoPlugin().observe_response(object())

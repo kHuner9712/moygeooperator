@@ -85,7 +85,8 @@ class PlatformPolicyTestCase(unittest.TestCase):
         self.assertTrue(plugins["chatgpt"].calibration_complete)
         self.assertTrue(plugins["doubao"].calibration_complete)
         self.assertTrue(plugins["deepseek"].calibration_complete)
-        for platform in EXPECTED_PLATFORMS - {"chatgpt", "doubao", "deepseek"}:
+        self.assertTrue(plugins["gemini"].calibration_complete)
+        for platform in EXPECTED_PLATFORMS - {"chatgpt", "doubao", "deepseek", "gemini"}:
             with self.subTest(platform=platform):
                 plugin = live_plugin(platform)
                 status = plugin.calibration_status()
