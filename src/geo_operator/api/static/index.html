@@ -2,113 +2,201 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GEO Operator V2</title>
+<title>GEO 任务执行中心</title>
 <style>
-:root{font-family:Inter,"Segoe UI",system-ui,sans-serif;background:#f3f5f8;color:#15202b}
-*{box-sizing:border-box}body{margin:0}header{background:#132238;color:white;padding:22px 30px}
-header div{max-width:1280px;margin:auto;display:flex;align-items:center;justify-content:space-between}
-header h1{margin:0;font-size:23px}.status{background:#1d8754;padding:6px 11px;border-radius:99px;font-size:12px}
-main{max-width:1280px;margin:22px auto;padding:0 20px}.toolbar,.grid{display:grid;gap:15px}
-.toolbar{grid-template-columns:2fr 1fr 1fr;background:white;border:1px solid #dfe4ea;padding:16px;border-radius:12px}
-.grid{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:15px}
-.card{background:white;border:1px solid #dfe4ea;border-radius:12px;padding:17px;min-height:150px}
-.card.full{grid-column:1/-1}h2{font-size:16px;margin:0 0 13px}input,select,button{font:inherit}
-input,select{border:1px solid #cdd4dc;border-radius:7px;padding:8px;width:100%}
-button{border:0;border-radius:7px;padding:8px 11px;background:#2258a5;color:white;cursor:pointer}
-button.warn{background:#a95a00}button.danger{background:#a53030}button.good{background:#18794e}
-button.secondary{background:#e8edf3;color:#26384c}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
-.list{display:flex;flex-direction:column;gap:9px}.item{border:1px solid #e2e7ed;border-radius:9px;padding:11px}
+*{box-sizing:border-box}body{margin:0}header{color:#fff}header h1{margin:0}
+main{max-width:1280px;padding:0 20px}.toolbar,.grid{display:grid}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.toolbar,.card{background:#fff}.card{border:1px solid #dfe5eb;min-height:150px}.card.full{grid-column:1/-1}
+h2{margin-top:0}input,select,button,textarea{font:inherit}input,select{width:100%}
+button{border:0;color:#fff;cursor:pointer}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
+.list{display:flex;flex-direction:column;gap:9px}.item{border:1px solid #e2e7ed}
 .item-head{display:flex;justify-content:space-between;gap:10px}.muted{color:#667382;font-size:12px}
-.state{font-size:11px;padding:4px 7px;border-radius:99px;background:#e8edf3}.state.PAUSED{background:#fff0d6;color:#7a4300}
-.state.COMPLETED{background:#dff4e8;color:#17633b}.state.FAILED{background:#fee1e1;color:#8b2222}
-.actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.actions button{font-size:12px}
-.prompt{font-size:13px;margin-top:7px;white-space:pre-wrap}.empty{color:#798593;padding:14px 0}
-.counts{display:flex;gap:12px;margin-bottom:12px}.metric{background:#f5f7fa;padding:9px;border-radius:8px;flex:1}
-.metric b{display:block;font-size:20px}#notice{position:fixed;right:20px;bottom:20px;background:#132238;color:#fff;padding:12px 16px;border-radius:9px;display:none}
-@media(max-width:800px){.toolbar,.grid{grid-template-columns:1fr}.card.full{grid-column:auto}}
+.state{border-radius:99px;background:#e8edf3}.actions{display:flex;flex-wrap:wrap}.prompt{white-space:pre-wrap}
+.empty{color:#798593;padding:14px 0}.metric{background:#f5f7fa;flex:1}.metric b{display:block}
+#notice{position:fixed;right:20px;bottom:20px;color:#fff;border-radius:9px;display:none}
+:root{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;background:#f4f6f9;color:#1b2733;line-height:1.5}
+body{background:#f4f6f9}header{background:linear-gradient(115deg,#17324d,#225f78);padding:22px 30px;box-shadow:0 4px 18px #17324d24}
+.header-inner{max-width:1280px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:18px}
+header h1{font-size:24px;letter-spacing:.02em}header small{display:block;margin-top:3px;color:#dbeaf2}
+.status{background:#dff7e8;color:#145c37;padding:7px 12px;border-radius:99px;font-size:13px;font-weight:700;white-space:nowrap}
+main{margin:22px auto 50px}.grid{gap:16px;margin-top:18px}
+.welcome{background:linear-gradient(120deg,#fff,#eef8fa);border:1px solid #d8e7ec;border-radius:16px;padding:20px;margin-bottom:16px}
+.welcome-top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.welcome h2{font-size:20px;margin:0 0 4px}.updated{font-size:12px;color:#60717e;white-space:nowrap}
+.guide{display:grid;grid-template-columns:1.2fr 2fr;gap:16px;margin-top:16px}.next-action{background:#fff;border:1px solid #cfe0e6;border-left:5px solid #23728d;border-radius:11px;padding:14px}
+.next-action.attention{border-left-color:#b15d12;background:#fffaf2}.next-action.success{border-left-color:#208654;background:#f5fcf8}
+.next-action strong{display:block;font-size:16px;margin-bottom:3px}.workflow{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}
+.workflow-step{background:#f0f3f5;color:#63717c;border-radius:10px;padding:10px 8px;font-size:12px;text-align:center}.workflow-step b{display:block;font-size:14px;color:inherit}
+.workflow-step.done{background:#e0f3e8;color:#17643d}.workflow-step.active{background:#dceef4;color:#175e78;box-shadow:inset 0 0 0 1px #94c5d4}
+.toolbar{grid-template-columns:1.5fr 1fr;gap:16px;border:1px solid #dfe5eb;padding:16px;border-radius:13px;box-shadow:0 2px 8px #2135470a}
+.field-label{display:block;color:#526270;font-size:13px;font-weight:700;margin-bottom:6px}.section-title{grid-column:1/-1;margin:14px 0 -3px;font-size:18px;color:#193a4a}
+.section-title span{display:block;font-size:12px;font-weight:400;color:#6a7781;margin-top:2px}
+.card{border-color:#dfe5eb;border-radius:13px;padding:18px;box-shadow:0 2px 10px #2135470a}.card h2,.subcard h2{font-size:16px;margin:0 0 5px}
+.card-note{color:#667682;font-size:13px;margin:0 0 13px}input,select,textarea{border:1px solid #c8d1da;border-radius:8px;padding:10px;background:#fff;color:#1b2733}
+input:focus,select:focus,textarea:focus,button:focus-visible,summary:focus-visible{outline:3px solid #8bc7da;outline-offset:2px;border-color:#28748e}
+button{border-radius:8px;padding:9px 13px;background:#236c88;font-weight:650;transition:filter .15s,transform .15s}
+button:hover:not(:disabled){filter:brightness(.92)}button:active:not(:disabled){transform:translateY(1px)}button:disabled{cursor:not-allowed;opacity:.48}
+button.warn{background:#a85a12}button.danger{background:#a83d3d}button.good{background:#258252}button.secondary{background:#e8eef2;color:#263c4a}
+.row .compact{max-width:110px}.item{border-color:#e1e7ec;border-radius:10px;padding:12px}.item.needs-attention{border-color:#edc99f;background:#fffaf3}
+.item-head{align-items:flex-start}.item-title{font-weight:700}.muted{color:#667682;font-size:12px}
+.state{display:inline-flex;align-items:center;font-size:12px;padding:4px 8px;color:#40505b;white-space:nowrap}
+.state.PAUSED,.state.WAIT_HUMAN_APPROVAL{background:#fff0d6;color:#7a4300}.state.COMPLETED,.state.EXECUTION_READY,.state.APPROVED{background:#def3e7;color:#17633b}
+.state.FAILED,.state.REJECTED{background:#fee1e1;color:#8b2222}.state.RUNNING{background:#dceef8;color:#155b7a}
+.actions{gap:7px;margin-top:11px}.actions button{font-size:13px}.prompt{font-size:14px;margin-top:9px;color:#2d3a44}
+.empty{text-align:center;background:#f8fafb;border-radius:8px}.counts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+.metric{padding:12px;border-radius:10px}.metric b{font-size:23px}.metric.attention{background:#fff4e5}.metric.success{background:#eaf7ef}
+.progress{height:8px;background:#e7edf1;border-radius:99px;overflow:hidden}.progress span{display:block;height:100%;background:#2a8a5b;transition:width .25s}
+.execution-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.execution-tools select{max-width:190px}
+details.advanced{grid-column:1/-1;min-height:auto}details.advanced>summary{cursor:pointer;font-weight:750;font-size:17px;list-style:none}
+details.advanced>summary::-webkit-details-marker{display:none}details.advanced>summary:after{content:"展开";float:right;color:#28718b;font-size:13px;font-weight:650}
+details.advanced[open]>summary:after{content:"收起"}.advanced-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:16px}
+.subcard{border-top:1px solid #e2e8ed;padding-top:15px}.technical{margin-top:8px}.technical summary{cursor:pointer;color:#60717d;font-size:12px}
+.technical-content{font-size:12px;color:#667682;margin-top:5px;overflow-wrap:anywhere}
+#notice{max-width:min(430px,calc(100vw - 40px));background:#17324d;padding:13px 17px;box-shadow:0 8px 30px #15202b42;z-index:10}
+@media(max-width:900px){.guide{grid-template-columns:1fr}.workflow{grid-template-columns:repeat(5,minmax(105px,1fr));overflow-x:auto}.advanced-grid{grid-template-columns:1fr}}
+@media(max-width:700px){header{padding:18px}.header-inner,.welcome-top{align-items:flex-start}.grid,.toolbar{grid-template-columns:1fr}.card.full,.section-title{grid-column:auto}.row{align-items:stretch;flex-direction:column}.row .compact{max-width:none}.counts{grid-template-columns:repeat(2,1fr)}main{padding:0 12px}.updated{white-space:normal}}
+textarea{width:100%;resize:vertical}
+.prep-title{order:10}.source-card{order:11}.website-card{order:12}.discovery-card{order:13}.profile-card{order:14}
+.flow-title{order:20}.approval-card{order:21}.execution-card{order:22}.package-card{order:23}
+.system-title{order:30}.platform-card{order:31}.session-card{order:32}
 </style>
 </head>
 <body>
-<header><div><span><h1>GEO Operator V2</h1><small>本地 GEO 执行控制台</small></span><span class="status">LOCALHOST · HEADED</span></div></header>
+<header><div class="header-inner"><span><h1>GEO 任务执行中心</h1><small>在本机安全地管理客户资料、执行监测任务并导出结果</small></span><span class="status">● 本机服务运行中</span></div></header>
 <main>
+<section class="welcome">
+ <div class="welcome-top"><div><h2>工作台</h2><div class="card-note">按照下方提示逐步操作，无需了解技术状态或浏览器自动化。</div></div><div id="lastUpdated" class="updated">正在读取最新状态…</div></div>
+ <div class="guide"><div id="nextAction" class="next-action"><strong id="nextActionTitle">正在检查下一步</strong><span id="nextActionText">请稍候，系统正在整理当前客户的进度。</span></div><div id="workflowSteps" class="workflow"></div></div>
+</section>
 <section class="toolbar">
- <div><label class="muted">当前客户</label><select id="tenantSelect"></select></div>
- <div><label class="muted">新建客户</label><div class="row"><input id="tenantName" placeholder="客户名称"><button onclick="createTenant()">创建</button></div></div>
- <div><label class="muted">导入 GEO_TASK_PACKAGE.zip</label><div class="row"><input id="taskFile" type="file" accept=".zip"><button onclick="importTasks()">导入</button></div></div>
+ <div><label class="field-label" for="tenantSelect">当前客户</label><select id="tenantSelect" aria-label="选择当前客户"></select></div>
+ <div><label class="field-label" for="tenantName">添加新客户</label><div class="row"><input id="tenantName" placeholder="输入客户名称"><button onclick="createTenant()">创建客户</button></div></div>
 </section>
 <div class="grid">
- <section class="card"><h2>客户资料导入</h2>
-  <div class="muted" style="margin-bottom:8px">支持 TXT/Markdown/CSV/JSON、PDF、Word、Excel 和常见图片；原文件与机械提取文本分开保存。</div>
-  <div class="row"><input id="sourceFile" type="file" accept=".txt,.md,.csv,.json,.pdf,.docx,.xlsx,.xlsm,.png,.jpg,.jpeg,.webp,.gif"><button onclick="uploadSource()">上传</button></div>
+ <h2 class="section-title prep-title">1. 准备客户资料<span>上传客户提供的文件，也可以补充官网页面和公开证据。</span></h2>
+ <section class="card source-card needs-tenant"><h2>上传客户文件</h2>
+  <p class="card-note">支持 PDF、Word、Excel、图片和常见文本文件。系统会保留原文件并自动提取可读内容。</p>
+  <div class="row"><input id="sourceFile" aria-label="选择客户资料文件" type="file" accept=".txt,.md,.csv,.json,.pdf,.docx,.xlsx,.xlsm,.png,.jpg,.jpeg,.webp,.gif"><button onclick="uploadSource()">上传文件</button></div>
   <div id="sources" class="list" style="margin-top:12px"></div>
  </section>
- <section class="card"><h2>官网资料抓取</h2>
-  <div class="row"><input id="websiteUrl" placeholder="https://客户官网/"><input id="websiteMax" type="number" min="1" max="50" value="20" style="max-width:90px"><button onclick="crawlWebsite()">抓取</button></div>
-  <div class="muted" style="margin-top:8px">只抓取公网、同源 HTML 页面；默认最多 20 页。</div>
+ <section class="card website-card needs-tenant"><h2>读取客户官网</h2>
+  <p class="card-note">输入官网首页地址，系统会在同一网站内读取公开页面，默认最多 20 页。</p>
+  <div class="row"><input id="websiteUrl" aria-label="客户官网地址" placeholder="例如：https://example.com/"><input id="websiteMax" class="compact" aria-label="最多读取页数" type="number" min="1" max="50" value="20"><button onclick="crawlWebsite()">开始读取</button></div>
   <div id="websitePages" class="list" style="margin-top:12px"></div>
  </section>
- <section class="card full"><h2>Public Discovery 原始证据</h2>
-  <div class="row"><input id="discoveryUrl" placeholder="https://公开来源页面/"><input id="discoveryType" value="PUBLIC_WEB" placeholder="来源类型"><button onclick="collectDiscovery()">采集 URL</button><button class="secondary" onclick="exportDiscovery()">导出 PUBLIC_DISCOVERY.zip</button></div>
-  <div class="muted" style="margin-top:8px">保存来源 URL、抓取时间、可见原始文本、截图和来源类型；可信度固定为 AI_PENDING，不自动写入客户档案。</div>
+ <section class="card full discovery-card needs-tenant"><h2>可选：收集公网证据</h2>
+  <p class="card-note">保存公开网页的原文、截图和来源信息，供外部 AI 后续分析。这里的内容不会自动加入客户档案。</p>
+  <div class="row"><input id="discoveryUrl" aria-label="公开来源网页地址" placeholder="输入公开网页地址"><input id="discoveryType" class="compact" value="PUBLIC_WEB" aria-label="来源类型" placeholder="来源类型"><button onclick="collectDiscovery()">保存证据</button><button class="secondary" onclick="exportDiscovery()">导出证据包</button></div>
   <div id="discovery" class="list" style="margin-top:12px"></div>
  </section>
- <section class="card full"><h2>客户档案</h2><textarea id="profileJson" style="width:100%;min-height:100px" placeholder='{"name":"KZQ","website":"","notes":""}'></textarea><div class="actions"><button onclick="loadProfile()">查看客户资料</button><button onclick="buildProfile()">从资料自动整理并提交</button><button class="good" onclick="saveProfile()">保存草稿并提交审批</button><button class="secondary" onclick="exportProfile()">导出 CLIENT_PROFILE.zip</button></div><div id="profileStatus" class="muted"></div></section>
- <section class="card"><h2>人工审批</h2><div id="approvals" class="list"></div></section>
- <section class="card"><h2>平台支持与校准</h2><div class="muted" style="margin-bottom:8px">收录九个平台；千问接入已暂停；Claude 明确禁止接入。CALIBRATION_REQUIRED 平台只允许登录与结构采样，不会调度真实问题。</div><div id="platforms" class="list"></div></section>
- <section class="card"><h2>浏览器 Session</h2>
+ <section class="card full profile-card needs-tenant"><h2>整理客户档案</h2><p class="card-note">先让系统根据已上传资料生成档案，再由人工确认。下方内容是结构化档案，可按需修改。</p><textarea id="profileJson" style="min-height:140px" aria-label="客户档案内容" placeholder="尚未生成客户档案"></textarea><div class="actions"><button onclick="buildProfile()">根据资料生成档案</button><button class="secondary" onclick="loadProfile()">重新载入已保存档案</button><button class="good" onclick="saveProfile()">保存并提交确认</button><button class="secondary" onclick="exportProfile()">导出客户档案包</button></div><div id="profileStatus" class="card-note" style="margin-top:10px"></div></section>
+ <h2 class="section-title flow-title">2. 审批并执行任务<span>需要人工确认的事项会集中显示；任务运行时可以随时暂停。</span></h2>
+ <section class="card full approval-card needs-tenant"><h2>待您确认</h2><p class="card-note">只有您明确批准后，系统才会整理档案、执行任务或导出结果。</p><div id="approvals" class="list"></div></section>
+ <h2 class="section-title system-title">3. 系统设置<span>首次登录平台或遇到账号验证时才需要使用。</span></h2>
+ <details class="card platform-card advanced"><summary>平台支持与校准 <span class="muted">（一般无需操作）</span></summary><p class="card-note" style="margin-top:12px">八个平台可执行；千问接入已暂停；Claude 明确禁止接入。</p><div id="platforms" class="list"></div></details>
+ <details class="card session-card advanced needs-tenant"><summary>平台登录与人工处理 <span class="muted">（首次使用或登录失效时打开）</span></summary>
   <div id="sessionControls" class="list"></div>
-  <div id="calibrationStatus" class="muted" style="margin-top:8px">首次登录使用无 Playwright 控制的系统 Chrome。登录完成后先关闭系统 Chrome，再检测结构；检测完成后释放校准 Session，独立 Worker 才能接管。快照不读取页面文本、Cookie 或本地存储。</div>
+  <div id="calibrationStatus" class="card-note" style="margin-top:12px">首次使用时点击“打开登录窗口”。登录完成后关闭该窗口，再检测登录状态。</div>
   <div id="sessions" class="list" style="margin-top:12px"></div>
- </section>
- <section class="card full"><h2>执行概览</h2><div class="counts">
+ </details>
+ <section class="card full execution-card needs-tenant"><h2>任务执行进度</h2><div class="counts">
   <div class="metric"><b id="totalCount">0</b><span class="muted">全部任务</span></div>
-  <div class="metric"><b id="completedCount">0</b><span class="muted">Completed</span></div>
-  <div class="metric"><b id="pausedCount">0</b><span class="muted">Paused</span></div>
-  <div class="metric"><b id="failedCount">0</b><span class="muted">Failed</span></div>
- </div><div id="executions" class="list"></div></section>
- <section class="card full"><h2>任务包与结果导出</h2><div id="packages" class="list"></div></section>
+  <div class="metric success"><b id="completedCount">0</b><span class="muted">已经完成</span></div>
+  <div class="metric attention"><b id="pausedCount">0</b><span class="muted">需要处理</span></div>
+  <div class="metric"><b id="failedCount">0</b><span class="muted">执行失败</span></div>
+ </div><div class="progress" aria-label="任务完成进度"><span id="executionProgress" style="width:0"></span></div><div class="execution-tools"><span id="progressText" class="card-note" style="margin:8px 0 0">尚无任务</span><select id="executionFilter" aria-label="筛选任务" onchange="renderExecutions(lastExecutions)"><option value="ALL">显示全部任务</option><option value="ATTENTION">只看需要处理</option><option value="RUNNING">只看运行中</option><option value="COMPLETED">只看已完成</option></select></div><div id="executions" class="list"></div></section>
+ <section class="card full package-card needs-tenant"><h2>任务包与结果导出</h2><p class="card-note">先导入外部 AI 生成的任务包。所有任务完成后，再申请结果导出确认并下载结果。</p><div class="row"><input id="taskFile" aria-label="选择 GEO 任务包" type="file" accept=".zip"><button onclick="importTasks()">导入任务包</button></div><div id="packages" class="list" style="margin-top:14px"></div></section>
 </div>
-</main><div id="notice"></div>
+</main><div id="notice" role="status" aria-live="polite"></div>
 <script>
 const byId=id=>document.getElementById(id);
 async function api(url,options={}){
- const response=await fetch(url,{headers:{'Content-Type':'application/json'},...options});
- if(!response.ok){let detail=response.statusText;try{detail=(await response.json()).detail}catch(e){}throw Error(detail)}
+ let response;
+ try{response=await fetch(url,{headers:{'Content-Type':'application/json'},...options})}
+ catch(error){throw Error('无法连接本地服务。请确认 GEO Operator 启动窗口仍在运行，然后重试。')}
+ if(!response.ok){
+  let detail=response.statusText;
+  try{detail=(await response.json()).detail}catch(error){}
+  throw Error(friendlyError(detail));
+ }
  const type=response.headers.get('content-type')||'';return type.includes('json')?response.json():response;
 }
 function notify(text,error=false){const n=byId('notice');n.textContent=text;n.style.background=error?'#8b2222':'#132238';n.style.display='block';setTimeout(()=>n.style.display='none',3500)}
 function tenantId(){return byId('tenantSelect').value}
 function empty(text){return '<div class="empty">'+text+'</div>'}
 function esc(value){const d=document.createElement('div');d.textContent=value==null?'':String(value);return d.innerHTML}
+const STATE_TEXT={
+ CREATED:'等待开始',WAIT_LOGIN:'检查登录状态',READY:'准备执行',WAIT_HUMAN_APPROVAL:'等待人工确认',
+ OPEN_PLATFORM:'正在打开平台',SEND_QUERY:'正在发送问题',WAIT_RESPONSE:'等待平台回答',
+ VERIFY_COMPLETE:'核对回答完整性',SAVE_RESULT:'正在保存结果',DELETE_CHAT:'正在清理临时会话',
+ VERIFY_DELETE:'确认会话已清理',NEXT_TASK:'准备下一项任务',COMPLETED:'已完成',PAUSED:'需要人工处理',FAILED:'执行失败'
+};
+const APPROVAL_TEXT={CLIENT_PROFILE_REVIEW:'确认客户档案',TASK_EXECUTION:'确认执行任务',RESULT_EXPORT:'确认导出结果'};
+const STATUS_TEXT={PENDING:'等待确认',APPROVED:'已批准',REJECTED:'已拒绝',DRAFT:'草稿',IMPORTED:'已导入',EXTRACTED:'内容提取完成',STORED_NO_TEXT:'原文件已保存',EXECUTION_READY:'可以执行',CALIBRATION_REQUIRED:'需要完成首次配置',INTEGRATION_PAUSED:'已暂停接入',AI_PENDING:'等待外部 AI 分析',COLLECTED:'读取成功',FAILED:'失败',READY:'可用',IN_USE:'使用中',NEEDS_HUMAN:'需要人工处理',INVALID:'不可用'};
+const PAUSE_TEXT={CAPTCHA:'需要完成验证码',LOGIN_EXPIRED:'平台登录已失效',SECURITY_VERIFICATION:'平台要求安全验证',PAGE_ABNORMAL:'平台页面出现异常',RATE_LIMITED:'平台暂时限制操作',ACCOUNT_RESTRICTED:'账号受到限制',COMPLETION_UNCERTAIN:'无法确认回答是否完整',MANUAL_VERIFICATION_UNAVAILABLE:'当前无法完成人工验证'};
+const PLATFORM_TEXT={doubao:'豆包',chatgpt:'ChatGPT',deepseek:'DeepSeek',gemini:'Gemini',yuanbao:'元宝',kimi:'Kimi',grok:'Grok',perplexity:'Perplexity',qwen:'千问',mock:'模拟平台'};
+let dashboardData={tenants:[],approvals:[],executions:[],packages:[],sessions:[],platforms:[]};
+let currentTenantData={sources:[],pages:[],discovery:[],profile:null};
+let lastExecutions=[];
+let refreshing=false;
+function stateText(value){return STATE_TEXT[value]||STATUS_TEXT[value]||value||'未知状态'}
+function pauseText(value){return PAUSE_TEXT[value]||stateText(value)}
+function platformText(value){return PLATFORM_TEXT[String(value).toLowerCase()]||value||'未知平台'}
+function stateClass(value){
+ if(value==='COMPLETED'||value==='APPROVED'||value==='EXECUTION_READY')return 'COMPLETED';
+ if(value==='PAUSED'||value==='WAIT_HUMAN_APPROVAL'||value==='PENDING'||value==='CALIBRATION_REQUIRED'||value==='INTEGRATION_PAUSED')return 'PAUSED';
+ if(value==='FAILED'||value==='REJECTED')return 'FAILED';
+ if(['OPEN_PLATFORM','SEND_QUERY','WAIT_RESPONSE','VERIFY_COMPLETE','SAVE_RESULT','DELETE_CHAT','VERIFY_DELETE','NEXT_TASK','READY','WAIT_LOGIN'].includes(value))return 'RUNNING';
+ return '';
+}
+function formatDate(value){if(!value)return '时间未知';const date=new Date(value);return Number.isNaN(date.getTime())?String(value):date.toLocaleString('zh-CN',{hour12:false})}
+function formatBytes(value){const size=Number(value||0);if(size<1024)return size+' B';if(size<1048576)return (size/1024).toFixed(1)+' KB';return (size/1048576).toFixed(1)+' MB'}
+function shortId(value){const text=String(value||'');return text.length>12?text.slice(0,8)+'…':text}
+function friendlyError(value){
+ const text=String(value||'操作未成功');
+ if(text.includes('Failed to fetch'))return '无法连接本地服务。请确认启动窗口仍在运行。';
+ if(text.includes('INTEGRATION_PAUSED')||text.toLowerCase().includes('integration paused'))return '该平台目前已暂停接入，不能登录、校准或执行任务。';
+ if(text.toLowerCase().includes('approval'))return '此操作需要先完成人工确认。请查看“待您确认”区域。';
+ if(text.toLowerCase().includes('profile'))return '请先生成并批准客户档案，然后再继续。';
+ return text;
+}
+function syncTenantControls(){const disabled=!tenantId();document.querySelectorAll('.needs-tenant input,.needs-tenant select,.needs-tenant textarea,.needs-tenant button').forEach(element=>{element.disabled=disabled})}
 async function refresh(){
+ if(refreshing)return;refreshing=true;
  try{
   const data=await Promise.all([api('/api/tenants'),api('/api/approvals'),api('/api/executions'),api('/api/task-packages'),api('/api/sessions'),api('/api/platforms')]);
+  dashboardData={tenants:data[0],approvals:data[1],executions:data[2],packages:data[3],sessions:data[4],platforms:data[5]};
   renderTenants(data[0]);renderApprovals(data[1]);renderExecutions(data[2]);renderPackages(data[3]);renderSessions(data[4]);renderPlatforms(data[5]);
   syncSessionInterventions(data[4]);
   await refreshTenantData();
- }catch(error){notify(error.message,true)}
+  renderGuide();syncTenantControls();
+  byId('lastUpdated').textContent='最近更新：'+new Date().toLocaleTimeString('zh-CN',{hour12:false});
+ }catch(error){notify(friendlyError(error.message),true)}
+ finally{refreshing=false}
 }
 function renderTenants(items){
  const select=byId('tenantSelect'),old=select.value||localStorage.getItem('geoTenant')||'';
- select.innerHTML=items.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join('');
+ select.innerHTML=items.length?items.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join(''):'<option value="">请先创建客户</option>';
+ select.disabled=!items.length;
  if(items.some(x=>x.id===old))select.value=old;
  select.onchange=()=>{localStorage.setItem('geoTenant',select.value);refresh()};
 }
 async function refreshTenantData(){
- if(!tenantId()){renderSources([]);renderWebsitePages([]);renderDiscovery([]);return}
+ if(!tenantId()){currentTenantData={sources:[],pages:[],discovery:[],profile:null};renderSources([]);renderWebsitePages([]);renderDiscovery([]);return}
  const data=await Promise.all([
   api('/api/tenants/'+tenantId()+'/sources'),
   api('/api/tenants/'+tenantId()+'/website-pages'),
-  api('/api/tenants/'+tenantId()+'/discovery')
+  api('/api/tenants/'+tenantId()+'/discovery'),
+  api('/api/tenants/'+tenantId()+'/profile').catch(()=>null)
  ]);
+ currentTenantData={sources:data[0],pages:data[1],discovery:data[2],profile:data[3]};
  renderSources(data[0]);renderWebsitePages(data[1]);renderDiscovery(data[2]);
 }
-function renderSources(items){byId('sources').innerHTML=items.length?items.map(x=>'<div class="item"><b>'+esc(x.original_name)+'</b><span class="state">'+esc(x.extraction_status)+'</span><div class="muted">'+esc(x.media_type)+' · '+esc(x.size)+' bytes · '+esc(x.created_at)+'</div></div>').join(''):empty('尚未导入客户资料')}
-function renderWebsitePages(items){byId('websitePages').innerHTML=items.length?items.slice(-10).reverse().map(x=>'<div class="item"><b>'+esc(x.title||x.source_url)+'</b><span class="state '+(x.status==='COLLECTED'?'COMPLETED':'FAILED')+'">'+esc(x.status)+'</span><div class="muted">'+esc(x.final_url||x.source_url)+'</div>'+(x.error?'<div class="muted">'+esc(x.error)+'</div>':'')+'</div>').join(''):empty('尚未抓取官网资料')}
-function renderDiscovery(items){byId('discovery').innerHTML=items.length?items.slice(-10).reverse().map(x=>'<div class="item"><b>'+esc(x.source_type)+'</b><span class="state">'+esc(x.credibility_status)+'</span><div class="muted">'+esc(x.source_url)+' · '+esc(x.captured_at)+'</div></div>').join(''):empty('尚无公网发现证据')}
+function renderSources(items){byId('sources').innerHTML=items.length?items.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.original_name)+'</b><span class="state '+stateClass(x.extraction_status)+'">'+esc(stateText(x.extraction_status))+'</span></div><div class="muted">'+esc(formatBytes(x.size))+' · 上传于 '+esc(formatDate(x.created_at))+'</div><details class="technical"><summary>查看文件信息</summary><div class="technical-content">'+esc(x.media_type)+'</div></details></div>').join(''):empty('还没有客户文件，可从上方选择并上传')}
+function renderWebsitePages(items){byId('websitePages').innerHTML=items.length?items.slice(-10).reverse().map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.title||'官网页面')+'</b><span class="state '+stateClass(x.status)+'">'+esc(stateText(x.status))+'</span></div><div class="muted">'+esc(x.final_url||x.source_url)+'</div>'+(x.error?'<div class="muted">未能读取：'+esc(friendlyError(x.error))+'</div>':'')+'</div>').join(''):empty('还没有读取官网，输入官网地址后点击“开始读取”')}
+function renderDiscovery(items){byId('discovery').innerHTML=items.length?items.slice(-10).reverse().map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.source_type||'公开网页')+'</b><span class="state">'+esc(stateText(x.credibility_status))+'</span></div><div class="muted">采集于 '+esc(formatDate(x.captured_at))+'</div><details class="technical"><summary>查看来源地址</summary><div class="technical-content">'+esc(x.source_url)+'</div></details></div>').join(''):empty('这是可选步骤，目前还没有收集公网证据')}
 function renderApprovals(items){
  const visible=items.filter(x=>x.status==='PENDING'&&(!tenantId()||x.tenant_id===tenantId()));
- byId('approvals').innerHTML=visible.length?visible.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.stage)+'</b><span class="state">'+esc(x.status)+'</span></div><div class="muted">'+esc(x.resource_type)+' · '+esc(x.resource_id)+'</div><div class="actions"><button class="good" onclick="decide(\''+x.id+'\',true)">批准</button><button class="danger" onclick="decide(\''+x.id+'\',false)">拒绝</button></div></div>').join(''):empty('没有待审批项目');
+ byId('approvals').innerHTML=visible.length?visible.map(x=>'<div class="item needs-attention"><div class="item-head"><b>'+esc(APPROVAL_TEXT[x.stage]||'需要您的确认')+'</b><span class="state PAUSED">等待确认</span></div><div class="card-note">'+esc(x.stage==='CLIENT_PROFILE_REVIEW'?'请检查整理后的客户档案是否准确。':x.stage==='TASK_EXECUTION'?'批准后浏览器才会开始执行任务。':'批准后才可以下载最终结果包。')+'</div><div class="actions"><button class="good" onclick="decide(\''+x.id+'\',true)">确认并批准</button><button class="danger" onclick="decide(\''+x.id+'\',false)">拒绝</button></div><details class="technical"><summary>查看记录编号</summary><div class="technical-content">'+esc(x.resource_type)+' · '+esc(x.resource_id)+'</div></details></div>').join(''):empty('目前没有需要您确认的事项');
 }
 function syncExecutionActions(rows){
  const cards=Array.from(byId('executions').querySelectorAll('.item'));
@@ -125,17 +213,36 @@ function syncExecutionActions(rows){
  });
 }
 function renderExecutions(items){
- const rows=items.filter(x=>!tenantId()||x.tenant_id===tenantId());
- byId('totalCount').textContent=rows.length;byId('completedCount').textContent=rows.filter(x=>x.state==='COMPLETED').length;
- byId('pausedCount').textContent=rows.filter(x=>x.state==='PAUSED').length;byId('failedCount').textContent=rows.filter(x=>x.state==='FAILED').length;
- byId('executions').innerHTML=rows.length?rows.map(x=>'<div class="item"><div class="item-head"><b>#'+esc(x.sequence||'-')+' · '+esc(x.platform)+'</b><span class="state '+esc(x.state)+'">'+esc(x.state)+'</span></div><div class="prompt">'+esc(x.prompt||'')+'</div><div class="muted">任务 '+esc(x.external_task_id||'')+' · '+esc(x.id)+'</div>'+(x.pause_reason?'<div class="muted">暂停原因：'+esc(x.pause_reason)+'</div>':'')+'<div class="actions"><button onclick="runExecution(\''+x.id+'\')">启动/继续调度</button><button class="warn" onclick="pauseExecution(\''+x.id+'\')">Pause</button><button class="good" onclick="continueExecution(\''+x.id+'\')">人工处理后 Continue</button><button class="secondary" onclick="showCheckpoints(\''+x.id+'\')">查看 Checkpoint</button><button class="secondary" onclick="showPauseEvidence(\''+x.id+'\')">查看错误截图</button></div><div id="cp-'+x.id+'"></div></div>').join(''):empty('尚无执行任务');
+ lastExecutions=items;
+ const allRows=items.filter(x=>!tenantId()||x.tenant_id===tenantId());
+ const filter=byId('executionFilter').value;
+ const rows=allRows.filter(x=>filter==='ALL'||(filter==='ATTENTION'&&['PAUSED','FAILED'].includes(x.state))||(filter==='RUNNING'&&!['CREATED','COMPLETED','PAUSED','FAILED','WAIT_HUMAN_APPROVAL'].includes(x.state))||(filter==='COMPLETED'&&x.state==='COMPLETED'));
+ const completed=allRows.filter(x=>x.state==='COMPLETED').length,paused=allRows.filter(x=>x.state==='PAUSED').length,failed=allRows.filter(x=>x.state==='FAILED').length;
+ byId('totalCount').textContent=allRows.length;byId('completedCount').textContent=completed;
+ byId('pausedCount').textContent=paused;byId('failedCount').textContent=failed;
+ const percent=allRows.length?Math.round(completed/allRows.length*100):0;
+ byId('executionProgress').style.width=percent+'%';
+ byId('progressText').textContent=allRows.length?'已完成 '+completed+' / '+allRows.length+' 项（'+percent+'%）':'导入并批准任务包后，任务会显示在这里';
+ byId('executions').innerHTML=rows.length?rows.map(x=>{
+  const attention=['PAUSED','FAILED'].includes(x.state);
+  const reason=x.pause_reason?'<div class="card-note" style="margin-top:8px"><b>需要处理：</b>'+esc(pauseText(x.pause_reason))+'</div>':'';
+  return '<div class="item '+(attention?'needs-attention':'')+'"><div class="item-head"><b>第 '+esc(x.sequence||'-')+' 项 · '+esc(platformText(x.platform))+'</b><span class="state '+stateClass(x.state)+'">'+esc(stateText(x.state))+'</span></div><div class="muted" style="margin-top:8px">监测问题</div><div class="prompt">'+esc(x.prompt||'')+'</div>'+reason+'<div class="actions"><button onclick="runExecution(\''+x.id+'\')">开始执行</button><button class="warn" onclick="pauseExecution(\''+x.id+'\')">暂停任务</button><button class="good" onclick="continueExecution(\''+x.id+'\')">我已处理，继续</button><button class="secondary" onclick="showCheckpoints(\''+x.id+'\')">查看保存进度</button><button class="secondary" onclick="showPauseEvidence(\''+x.id+'\')">查看问题截图</button></div><details class="technical"><summary>查看任务编号</summary><div class="technical-content">'+esc(x.external_task_id||'')+' · '+esc(x.id)+'</div></details><div id="cp-'+x.id+'"></div></div>';
+ }).join(''):empty(filter==='ALL'?'目前没有执行任务':'当前筛选条件下没有任务');
  syncExecutionActions(rows);
 }
 function renderPackages(items){
  const rows=items.filter(x=>!tenantId()||x.tenant_id===tenantId());
- byId('packages').innerHTML=rows.length?rows.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.package_id)+'</b><span class="state">'+esc(x.status)+'</span></div><div class="muted">Schema '+esc(x.schema_version)+' · '+esc(x.imported_at)+'</div><div class="actions"><button onclick="requestExport(\''+x.id+'\')">申请 RESULT_EXPORT 审批</button><button class="good" onclick="exportResults(\''+x.id+'\')">导出 RESULT_PACKAGE.zip</button></div></div>').join(''):empty('尚未导入任务包');
+ byId('packages').innerHTML=rows.length?rows.map(x=>{
+  const executions=dashboardData.executions.filter(item=>item.task_package_id===x.id);
+  const allComplete=executions.length>0&&executions.every(item=>item.state==='COMPLETED');
+  const approval=dashboardData.approvals.find(item=>item.stage==='RESULT_EXPORT'&&item.resource_id===x.id);
+  const requestDisabled=!allComplete||Boolean(approval);
+  const exportReady=approval&&approval.status==='APPROVED';
+  const hint=!executions.length?'等待任务执行确认':!allComplete?'任务尚未全部完成':!approval?'可以申请导出确认':approval.status==='PENDING'?'等待您批准结果导出':'结果包可以下载';
+  return '<div class="item"><div class="item-head"><b>'+esc(x.package_id)+'</b><span class="state '+stateClass(x.status)+'">'+esc(stateText(x.status))+'</span></div><div class="card-note">'+esc(hint)+'</div><div class="actions"><button'+(requestDisabled?' disabled title="任务全部完成后才可申请"':'')+' onclick="requestExport(\''+x.id+'\')">申请结果导出确认</button><button class="good"'+(exportReady?'':' disabled title="请先批准结果导出确认"')+' onclick="exportResults(\''+x.id+'\')">下载最终结果包</button></div><details class="technical"><summary>查看任务包信息</summary><div class="technical-content">版本 '+esc(x.schema_version)+' · 导入于 '+esc(formatDate(x.imported_at))+'</div></details></div>';
+ }).join(''):empty('尚未导入任务包，请从上方选择 ZIP 文件');
 }
-function renderSessions(items){const rows=items.filter(x=>!tenantId()||x.tenant_id===tenantId());byId('sessions').innerHTML=rows.length?rows.map(x=>'<div class="item"><b>'+esc(x.platform)+'</b> · '+esc(x.account_id)+' <span class="state">'+esc(x.status)+'</span></div>').join(''):empty('尚无 Session')}
+function renderSessions(items){const rows=items.filter(x=>!tenantId()||x.tenant_id===tenantId());byId('sessions').innerHTML=rows.length?rows.map(x=>'<div class="item"><div class="item-head"><b>'+esc(platformText(x.platform))+'</b><span class="state '+stateClass(x.status)+'">'+esc(stateText(x.status))+'</span></div><div class="muted">登录身份：'+esc(x.account_id==='manual'?'人工登录账号':x.account_id)+'</div></div>').join(''):empty('当前客户没有打开的平台会话')}
 function syncSessionInterventions(items){
  const rows=items.filter(x=>!tenantId()||x.tenant_id===tenantId());
  const cards=Array.from(byId('sessions').querySelectorAll('.item'));
@@ -143,20 +250,42 @@ function syncSessionInterventions(items){
   const item=rows[index];
   if(!item||!item.intervention_reason)return;
   const badge=card.querySelector('.state');
-  if(badge){badge.textContent='HUMAN_TAKEOVER_REQUIRED';badge.classList.add('PAUSED')}
-  card.insertAdjacentHTML('beforeend','<div class="muted">\u4eba\u5de5\u63a5\u7ba1\u539f\u56e0\uff1a'+esc(item.intervention_reason)+' &middot; '+esc(item.blocking_execution_id||'')+'</div>');
+  if(badge){badge.dataset.state='HUMAN_TAKEOVER_REQUIRED';badge.textContent='需要人工处理';badge.classList.add('PAUSED')}
+  card.insertAdjacentHTML('beforeend','<div class="card-note" style="margin-top:8px"><b>请处理：</b>'+esc(pauseText(item.intervention_reason))+'</div>');
  });
 }
 function renderPlatforms(items){
  const rows=items.filter(x=>x.platform!=='mock');
- byId('platforms').innerHTML=rows.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.label)+' <span class="muted">('+esc(x.platform)+')</span></b><span class="state '+(x.complete?'COMPLETED':'PAUSED')+'">'+esc(x.support_status)+'</span></div><div class="muted">Phase '+esc(x.phase)+' · '+(x.region==='CN'?'国内':'国外')+' · '+esc(x.home_url)+'</div><div class="muted">已观察：'+esc(x.observed_at||'尚未完成登录后 DOM 校准')+'</div><div class="muted">待校准：'+esc((x.missing||[]).join(', ')||'无')+'</div></div>').join('');
+ byId('platforms').innerHTML=rows.map(x=>{
+  const description=x.support_status==='EXECUTION_READY'?'登录后可以执行监测任务':x.support_status==='INTEGRATION_PAUSED'?'目前不能登录、配置或执行任务':'需要先完成首次登录配置';
+  return '<div class="item"><div class="item-head"><b>'+esc(x.label)+'</b><span class="state '+stateClass(x.support_status)+'">'+esc(stateText(x.support_status))+'</span></div><div class="card-note">'+esc(description)+'</div><details class="technical"><summary>查看技术信息</summary><div class="technical-content">阶段 '+esc(x.phase)+' · '+esc(x.region==='CN'?'国内平台':'国外平台')+' · '+esc(x.home_url)+'<br>最近验证：'+esc(formatDate(x.observed_at))+'<br>待配置：'+esc((x.missing||[]).join(', ')||'无')+'</div></details></div>';
+ }).join('');
  const controls=rows.map(x=>{
   const paused=x.policy==='PAUSED';
   const disabled=paused?' disabled title="平台接入已暂停"':'';
-  const notice=paused?'<div class="muted">接入已暂停：'+esc(x.pause_reason||'等待人工解除')+'</div>':'';
-  return '<div class="item"><div class="item-head"><b>'+esc(x.label)+'</b><span class="state '+(x.complete?'COMPLETED':'PAUSED')+'">'+esc(x.support_status)+'</span></div><div class="actions"><button'+disabled+' onclick="openSession(\''+esc(x.platform)+'\')">系统 Chrome 登录</button><button class="secondary"'+disabled+' onclick="checkCalibration(\''+esc(x.platform)+'\')">检测登录/结构</button><button class="good" onclick="releaseSession(\''+esc(x.platform)+'\')">关闭并释放</button></div>'+notice+'</div>';
+  const notice=paused?'<div class="card-note" style="margin-top:8px">已暂停：'+esc(pauseText(x.pause_reason||'等待人工解除'))+'</div>':'';
+  return '<div class="item"><div class="item-head"><b>'+esc(x.label)+'</b><span class="state '+stateClass(x.support_status)+'">'+esc(stateText(x.support_status))+'</span></div><div class="actions"><button'+disabled+' onclick="openSession(\''+esc(x.platform)+'\')">打开登录窗口</button><button class="secondary"'+disabled+' onclick="checkCalibration(\''+esc(x.platform)+'\')">检测登录状态</button><button class="good" onclick="releaseSession(\''+esc(x.platform)+'\')">关闭并释放</button></div>'+notice+'</div>';
  }).join('');
  byId('sessionControls').innerHTML=controls;
+}
+function renderGuide(){
+ const current=tenantId(),tenant=dashboardData.tenants.find(item=>item.id===current);
+ const approvals=dashboardData.approvals.filter(item=>item.tenant_id===current&&item.status==='PENDING');
+ const executions=dashboardData.executions.filter(item=>item.tenant_id===current);
+ const packages=dashboardData.packages.filter(item=>item.tenant_id===current);
+ const hasMaterial=currentTenantData.sources.length>0||currentTenantData.pages.length>0;
+ let active=0,title='先创建客户',text='输入客户名称并点击“创建客户”，然后开始导入资料。',tone='';
+ if(tenant&&!hasMaterial){active=1;title='上传客户资料';text='上传客户提供的文件，或者输入官网地址读取公开页面。'}
+ else if(tenant&&!currentTenantData.profile){active=1;title='生成客户档案';text='资料准备好后，点击“根据资料生成档案”。'}
+ else if(approvals.length){active=2;title='请完成人工确认';text='“待您确认”区域有 '+approvals.length+' 项需要处理，系统会在您批准前保持等待。';tone='attention'}
+ else if(tenant&&!packages.length){active=2;title='导入 GEO 任务包';text='选择外部 AI 生成的 ZIP 任务包并导入。'}
+ else if(executions.some(item=>['PAUSED','FAILED'].includes(item.state))){active=3;title='有任务需要人工处理';text='请查看橙色任务卡片，按提示完成验证或登录后再继续。';tone='attention'}
+ else if(executions.length&&executions.some(item=>item.state!=='COMPLETED')){active=3;title='任务正在执行';text='可以离开本页面，系统会持续保存进度；遇到验证时会自动暂停。'}
+ else if(executions.length&&executions.every(item=>item.state==='COMPLETED')){active=4;title='任务已全部完成';text='请申请并批准结果导出确认，然后下载最终结果包。';tone='success'}
+ else if(packages.length){active=2;title='等待任务执行确认';text='请查看“待您确认”区域，批准后任务才会开始。'}
+ const steps=['客户','档案','审批','执行','导出'];
+ byId('workflowSteps').innerHTML=steps.map((label,index)=>'<div class="workflow-step '+(index<active?'done':index===active?'active':'')+'"><b>'+(index+1)+'</b>'+label+'</div>').join('');
+ byId('nextAction').className='next-action '+tone;byId('nextActionTitle').textContent=title;byId('nextActionText').textContent=text;
 }
 async function uploadSource(){try{const file=byId('sourceFile').files[0];if(!file||!tenantId())throw Error('请选择客户和资料文件');await api('/api/tenants/'+tenantId()+'/sources',{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:await file.arrayBuffer()});byId('sourceFile').value='';notify('客户资料已保存并完成机械提取');await refreshTenantData()}catch(e){notify(e.message,true)}}
 async function crawlWebsite(){try{if(!tenantId())throw Error('请选择客户');notify('官网抓取进行中');const result=await api('/api/tenants/'+tenantId()+'/website-crawls',{method:'POST',body:JSON.stringify({start_url:byId('websiteUrl').value,max_pages:Number(byId('websiteMax').value||20)})});notify('官网抓取完成：'+result.collected+' 成功，'+result.failed+' 失败');await refreshTenantData()}catch(e){notify(e.message,true)}}
@@ -165,19 +294,19 @@ async function exportDiscovery(){try{const r=await api('/api/tenants/'+tenantId(
 function downloadResponse(response,name){response.blob().then(blob=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)})}
 async function createTenant(){try{await api('/api/tenants',{method:'POST',body:JSON.stringify({name:byId('tenantName').value})});byId('tenantName').value='';notify('客户已创建');refresh()}catch(e){notify(e.message,true)}}
 let currentProfileId='';
-async function loadProfile(){try{const profile=await api('/api/tenants/'+tenantId()+'/profile');currentProfileId=profile.id;byId('profileJson').value=JSON.stringify(profile.profile,null,2);byId('profileStatus').textContent=profile.status+' · '+profile.updated_at}catch(e){byId('profileStatus').textContent='尚无客户档案'}}
-async function buildProfile(){try{const saved=await api('/api/tenants/'+tenantId()+'/profile/build',{method:'POST'});currentProfileId=saved.id;byId('profileJson').value=JSON.stringify(saved.profile,null,2);byId('profileStatus').textContent=saved.status;notify('资料已机械整理，未包含 Public Discovery，等待人工审批');refresh()}catch(e){notify(e.message,true)}}
-async function saveProfile(){try{const profile=JSON.parse(byId('profileJson').value);const saved=await api('/api/tenants/'+tenantId()+'/profile',{method:'POST',body:JSON.stringify({profile})});currentProfileId=saved.id;byId('profileStatus').textContent=saved.status;notify('客户档案已保存，等待 CLIENT_PROFILE_REVIEW 审批');refresh()}catch(e){notify(e.message,true)}}
+async function loadProfile(){try{const profile=await api('/api/tenants/'+tenantId()+'/profile');currentProfileId=profile.id;byId('profileJson').value=JSON.stringify(profile.profile,null,2);byId('profileStatus').textContent='当前状态：'+stateText(profile.status)+' · 更新于 '+formatDate(profile.updated_at)}catch(e){byId('profileStatus').textContent='尚未生成客户档案'}}
+async function buildProfile(){try{const saved=await api('/api/tenants/'+tenantId()+'/profile/build',{method:'POST'});currentProfileId=saved.id;byId('profileJson').value=JSON.stringify(saved.profile,null,2);byId('profileStatus').textContent='当前状态：'+stateText(saved.status);notify('客户资料已整理完成，请在“待您确认”区域检查并批准');refresh()}catch(e){notify(friendlyError(e.message),true)}}
+async function saveProfile(){try{let profile;try{profile=JSON.parse(byId('profileJson').value)}catch(error){throw Error('档案内容格式不正确，请检查括号、引号和逗号。')}const saved=await api('/api/tenants/'+tenantId()+'/profile',{method:'POST',body:JSON.stringify({profile})});currentProfileId=saved.id;byId('profileStatus').textContent='当前状态：'+stateText(saved.status);notify('客户档案已保存，请在“待您确认”区域完成确认');refresh()}catch(e){notify(friendlyError(e.message),true)}}
 async function exportProfile(){try{if(!currentProfileId)await loadProfile();const r=await api('/api/profiles/'+currentProfileId+'/export',{method:'POST'});const blob=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CLIENT_PROFILE.zip';a.click();URL.revokeObjectURL(a.href)}catch(e){notify(e.message,true)}}async function importTasks(){try{const file=byId('taskFile').files[0];if(!file||!tenantId())throw Error('请选择客户和 ZIP 文件');await api('/api/tenants/'+tenantId()+'/task-packages',{method:'POST',headers:{'Content-Type':'application/zip'},body:await file.arrayBuffer()});notify('任务包已导入，等待人工审批');refresh()}catch(e){notify(e.message,true)}}
-async function decide(id,approved){const actor=prompt('操作者标识','operator');if(!actor)return;try{await api('/api/approvals/'+id+'/decision',{method:'POST',body:JSON.stringify({approved,actor,note:''})});refresh()}catch(e){notify(e.message,true)}}
-async function openSession(platform){try{await api('/api/sessions/open',{method:'POST',body:JSON.stringify({tenant_id:tenantId(),platform,account_id:'manual'})});notify('已用原生系统 Chrome 打开 '+platform+'；登录完成后请关闭该窗口');refresh()}catch(e){notify(e.message,true)}}
-async function checkCalibration(platform){try{const data=await api('/api/sessions/calibration-snapshot',{method:'POST',body:JSON.stringify({tenant_id:tenantId(),platform,account_id:'manual'})});byId('calibrationStatus').textContent=platform+' · 登录='+data.logged_in+' · 结构节点='+data.elements.length+' · 插件完整='+data.plugin.complete;notify('已完成仅结构校准快照')}catch(e){notify(e.message,true)}}
-async function releaseSession(platform){try{await api('/api/sessions/close',{method:'POST',body:JSON.stringify({tenant_id:tenantId(),platform,account_id:'manual'})});notify(platform+' 校准 Session 已关闭并释放给独立 Worker');refresh()}catch(e){notify(e.message,true)}}
-async function runExecution(id){try{await api('/api/executions/'+id+'/run',{method:'POST'});notify('已排队等待独立 Worker；待校准平台会失败关闭，不会发送问题');refresh()}catch(e){notify(e.message,true)}}
-async function pauseExecution(id){try{await api('/api/executions/'+id+'/pause',{method:'POST'});refresh()}catch(e){notify(e.message,true)}}
-async function continueExecution(id){if(!confirm('确认人工处理已完成？独立 Worker 会先重新验证页面，验证失败仍保持暂停。'))return;try{await api('/api/executions/'+id+'/continue',{method:'POST',body:JSON.stringify({note:'operator completed takeover'})});notify('已排队等待独立 Worker 复核');refresh()}catch(e){notify(e.message,true)}}
-async function showPauseEvidence(id){try{const evidence=await api('/api/executions/'+id+'/pause-evidence');const image=evidence.screenshot_path?'<img alt="暂停错误截图" style="max-width:100%;margin-top:8px;border-radius:7px" src="/api/executions/'+id+'/pause-screenshot?ts='+Date.now()+'">':'';const calibration=evidence.calibration_block?'<div class="muted">校准阻塞：'+esc(evidence.calibration_block)+' · '+esc(evidence.message||'')+'</div>':'';const structure=evidence.structure_path?'<div class="muted">结构证据：'+esc(evidence.structure_path)+' · '+esc(evidence.structure_privacy||'')+'</div>':'';byId('cp-'+id).innerHTML='<div class="muted">'+esc(evidence.created_at)+' · '+esc(evidence.page_url||'')+'</div>'+calibration+structure+image}catch(e){notify(e.message,true)}}async function showCheckpoints(id){try{const rows=await api('/api/executions/'+id+'/checkpoints');byId('cp-'+id).innerHTML=rows.length?'<div class="muted">最新 checkpoint #'+rows[0].sequence+' · '+esc(rows[0].captured_at)+' · '+esc(rows[0].content_sha256)+'</div>':empty('尚无 checkpoint')}catch(e){notify(e.message,true)}}
-async function requestExport(id){try{await api('/api/task-packages/'+id+'/result-export-approval',{method:'POST'});notify('RESULT_EXPORT 审批已创建');refresh()}catch(e){notify(e.message,true)}}
+async function decide(id,approved){const actor=prompt('请输入您的姓名或操作员名称，用于记录本次确认','operator');if(!actor)return;try{await api('/api/approvals/'+id+'/decision',{method:'POST',body:JSON.stringify({approved,actor,note:''})});notify(approved?'已批准，系统将进入下一步':'已拒绝，本次流程不会继续');refresh()}catch(e){notify(friendlyError(e.message),true)}}
+async function openSession(platform){try{await api('/api/sessions/open',{method:'POST',body:JSON.stringify({tenant_id:tenantId(),platform,account_id:'manual'})});notify('已打开 '+platformText(platform)+' 登录窗口。登录完成后请关闭该窗口');refresh()}catch(e){notify(friendlyError(e.message),true)}}
+async function checkCalibration(platform){try{const data=await api('/api/sessions/calibration-snapshot',{method:'POST',body:JSON.stringify({tenant_id:tenantId(),platform,account_id:'manual'})});byId('calibrationStatus').textContent=platformText(platform)+'：'+(data.logged_in?'已成功登录':'未检测到登录')+'；'+(data.plugin.complete?'平台配置完整，可以执行任务':'仍需完成首次配置');notify('登录状态检测完成')}catch(e){notify(friendlyError(e.message),true)}}
+async function releaseSession(platform){try{await api('/api/sessions/close',{method:'POST',body:JSON.stringify({tenant_id:tenantId(),platform,account_id:'manual'})});notify(platformText(platform)+' 窗口已关闭并释放');refresh()}catch(e){notify(friendlyError(e.message),true)}}
+async function runExecution(id){try{await api('/api/executions/'+id+'/run',{method:'POST'});notify('任务已加入执行队列，系统会自动保存进度');refresh()}catch(e){notify(friendlyError(e.message),true)}}
+async function pauseExecution(id){try{await api('/api/executions/'+id+'/pause',{method:'POST'});notify('任务已安全暂停');refresh()}catch(e){notify(friendlyError(e.message),true)}}
+async function continueExecution(id){if(!confirm('确认验证码、登录或安全验证已经处理完成？系统会先重新检查页面，检查通过后才继续。'))return;try{await api('/api/executions/'+id+'/continue',{method:'POST',body:JSON.stringify({note:'operator completed takeover'})});notify('已提交继续请求，系统正在重新检查页面');refresh()}catch(e){notify(friendlyError(e.message),true)}}
+async function showPauseEvidence(id){try{const evidence=await api('/api/executions/'+id+'/pause-evidence');const image=evidence.screenshot_path?'<img alt="任务暂停时的页面截图" style="max-width:100%;margin-top:8px;border-radius:7px" src="/api/executions/'+id+'/pause-screenshot?ts='+Date.now()+'">':'';byId('cp-'+id).innerHTML='<div class="card-note" style="margin-top:10px">截图时间：'+esc(formatDate(evidence.created_at))+'</div>'+image+'<details class="technical"><summary>查看技术信息</summary><div class="technical-content">'+esc(evidence.page_url||'')+' · '+esc(evidence.calibration_block||'')+' '+esc(evidence.message||'')+'</div></details>'}catch(e){notify(friendlyError(e.message),true)}}async function showCheckpoints(id){try{const rows=await api('/api/executions/'+id+'/checkpoints');byId('cp-'+id).innerHTML=rows.length?'<div class="card-note" style="margin-top:10px">回答已实时保存 '+rows.length+' 次；最近保存于 '+esc(formatDate(rows[0].captured_at))+'</div>':empty('尚未保存到回答内容')}catch(e){notify(friendlyError(e.message),true)}}
+async function requestExport(id){try{await api('/api/task-packages/'+id+'/result-export-approval',{method:'POST'});notify('已创建结果导出确认，请在“待您确认”区域批准');refresh()}catch(e){notify(friendlyError(e.message),true)}}
 async function exportResults(id){try{const r=await api('/api/task-packages/'+id+'/result-export',{method:'POST'});const blob=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='RESULT_PACKAGE.zip';a.click();URL.revokeObjectURL(a.href)}catch(e){notify(e.message,true)}}
 refresh();setInterval(refresh,4000);
 </script>

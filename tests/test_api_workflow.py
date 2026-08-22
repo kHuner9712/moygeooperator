@@ -135,6 +135,16 @@ class ApiWorkflowTestCase(unittest.TestCase):
         self.assertIn("const paused=x.policy==='PAUSED'", html)
         self.assertIn('disabled title="平台接入已暂停"', html)
         self.assertIn("千问接入已暂停", html)
+        self.assertIn("GEO 任务执行中心", html)
+        self.assertIn('id="workflowSteps"', html)
+        self.assertIn('id="nextActionTitle"', html)
+        self.assertIn('id="executionFilter"', html)
+        self.assertIn("function renderGuide()", html)
+        self.assertIn("无法连接本地服务", html)
+        self.assertIn("需要完成验证码", html)
+        self.assertIn('<details class="card platform-card advanced">', html)
+        self.assertNotIn(">Pause<", html)
+        self.assertNotIn(">Continue<", html)
 
     def test_session_api_rejects_unsafe_identity_before_browser_launch(self) -> None:
         unsafe = self.client.post(

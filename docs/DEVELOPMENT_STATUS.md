@@ -23,7 +23,7 @@
 | Session 管理 | 完成 | tenant/platform/account 隔离、persistent profile、单执行锁、原生 Chrome 登录 |
 | 人工接管 | 完成 | CAPTCHA、登录失效、安全验证、限流、账号限制、页面异常均暂停，禁止绕过 |
 | 结果导出 | 完成 | RESULT_EXPORT 审批、started_at/completed_at、回答/截图/事件/manifest |
-| 本地控制界面 | 完成 | 客户、资料、官网、证据、档案、审批、任务、Session、暂停/继续、进度、导出；暂停接入平台禁用登录与校准按钮 |
+| 本地控制界面 | 完成 | 五步下一步向导、中文状态/异常映射、友好断线提示、审批解释、任务筛选与进度条、响应式布局、高级设置折叠；暂停接入平台禁用登录与校准按钮 |
 | artifacts 元数据 | 完成 | 路径、SHA-256、大小、MIME、类型、时间 |
 
 ## 平台上线状态
