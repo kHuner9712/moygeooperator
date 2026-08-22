@@ -198,17 +198,146 @@ class GeminiPlugin(ObservedWebChatPlugin):
         return await page.locator(f"a[href='{path}']").count() == 0
 
 
-class YuanbaoPlugin(CalibrationPendingPlugin):
+class YuanbaoPlugin(ObservedWebChatPlugin):
     phase = 3
     name = "yuanbao"
+    observed_at = "2026-08-23"
+    deletion_action_verified = True
     home_url = "https://yuanbao.tencent.com/chat/"
-    conversation_link_selectors = ("a[href*='/chat/']",)
+    conversation_link_selectors = (".yb-recent-conv-list__item",)
     conversation_path_prefixes = ("/chat/",)
     selectors = PhaseOneSelectors(
         login_indicators=("button:has-text('登录')",),
-        prompt_inputs=("textarea", "[contenteditable='true'][role='textbox']"),
-        send_controls=(),
+        prompt_inputs=(
+            ".agent-chat__input-box .ql-editor[contenteditable='true']",
+        ),
+        send_controls=("a#yuanbao-send-btn[aria-label='发送']",),
+        user_queries=(".agent-chat__bubble--human .hyc-component-text",),
+        responses=(".agent-chat__list__item--ai .hyc-content-md",),
+        streaming_indicators=(
+            ".agent-chat__list__item--ai .hyc-content-md:not(.hyc-content-md-done)",
+            (
+                ".agent-dialogue__content--common"
+                ":not(.agent-dialogue__content--common-not-speaking)"
+            ),
+        ),
+        stop_controls=(
+            ".agent-chat__input-box a[class*='style__send-btn']:not(#yuanbao-send-btn)",
+        ),
+        conversation_menu_controls=(
+            ".yb-recent-conv-list__item.active .yb-recent-conv-list__dropdown-trigger",
+        ),
+        delete_controls=(
+            ".yb-dropdown__item:has(.icon-yb-ic_delete_20)",
+        ),
+        delete_confirm_controls=(
+            (
+                ".t-dialog__ctx.t-dialog__modal .t-dialog__footer "
+                "button.t-button--theme-danger:has-text('确认删除')"
+            ),
+        ),
     )
+
+    @staticmethod
+    def _valid_path_token(value: str) -> bool:
+        return 6 <= len(value) <= 64 and all(
+            character.isalnum() or character in "-_" for character in value
+        )
+
+    def is_conversation_url(self, value: str) -> bool:
+        target = urlsplit(value)
+        home = urlsplit(self.home_url)
+        parts = target.path.strip("/").split("/")
+        return (
+            target.scheme == "https"
+            and target.netloc == home.netloc
+            and not target.username
+            and not target.password
+            and len(parts) == 3
+            and parts[0] == "chat"
+            and self._valid_path_token(parts[1])
+            and self._valid_path_token(parts[2])
+        )
+
+    def is_home_url(self, value: str) -> bool:
+        target = urlsplit(value)
+        home = urlsplit(self.home_url)
+        parts = target.path.strip("/").split("/")
+        return (
+            target.scheme == "https"
+            and target.netloc == home.netloc
+            and not target.username
+            and not target.password
+            and 1 <= len(parts) <= 2
+            and parts[0] == "chat"
+            and (len(parts) == 1 or self._valid_path_token(parts[1]))
+        )
+
+    async def wait_for_calibration_hydration(self, page: object) -> str:
+        if self.is_home_url(page.url):
+            return await self.wait_for_home_hydration(page)
+        return await super().wait_for_calibration_hydration(page)
+
+    async def delete_chat(self, page: object) -> None:
+        if not self.is_conversation_url(page.url):
+            raise PluginPageAbnormal("Yuanbao delete requires a conversation URL")
+        self._deleting_conversation_url = page.url
+        items = page.locator(".yb-recent-conv-list__item")
+        self._history_count_before_delete = await items.count()
+        active = page.locator(".yb-recent-conv-list__item.active")
+        try:
+            await active.wait_for(state="visible", timeout=10_000)
+        except PlaywrightTimeoutError as exc:
+            raise PluginPageAbnormal(
+                "Yuanbao active conversation item did not become visible"
+            ) from exc
+        if await active.count() != 1:
+            raise PluginPageAbnormal("Yuanbao active conversation item is not unique")
+        await active.hover()
+        menu = active.locator(".yb-recent-conv-list__dropdown-trigger")
+        if await menu.count() != 1 or not await menu.is_visible():
+            raise PluginPageAbnormal("Yuanbao conversation menu is not uniquely visible")
+        await menu.click()
+        delete = page.locator(".yb-dropdown__item:has(.icon-yb-ic_delete_20)")
+        try:
+            await delete.wait_for(state="visible", timeout=5_000)
+        except PlaywrightTimeoutError as exc:
+            raise PluginPageAbnormal("Yuanbao delete item did not become visible") from exc
+        if await delete.count() != 1:
+            raise PluginPageAbnormal("Yuanbao delete item is not unique")
+        await delete.click()
+        confirm = page.locator(
+            ".t-dialog__ctx.t-dialog__modal .t-dialog__footer "
+            "button.t-button--theme-danger:has-text('确认删除')"
+        )
+        try:
+            await confirm.wait_for(state="visible", timeout=5_000)
+        except PlaywrightTimeoutError as exc:
+            raise PluginPageAbnormal(
+                "Yuanbao delete confirmation did not appear"
+            ) from exc
+        if await confirm.count() != 1:
+            raise PluginPageAbnormal("Yuanbao delete confirmation is not unique")
+        await confirm.click()
+
+    async def verify_chat_deleted(self, page: object) -> bool:
+        if not await self.detect_login(page):
+            return False
+        target = getattr(self, "_deleting_conversation_url", None)
+        if isinstance(target, str):
+            current = urlsplit(page.url)._replace(query="", fragment="").geturl()
+            expected = urlsplit(target)._replace(query="", fragment="").geturl()
+            if current == expected:
+                return False
+            before = getattr(self, "_history_count_before_delete", None)
+            if isinstance(before, int):
+                current_count = await page.locator(".yb-recent-conv-list__item").count()
+                if current_count < before:
+                    return True
+            return self.is_home_url(page.url) or self.is_conversation_url(page.url)
+        return self.is_home_url(page.url) and not await self._any_visible(
+            page, self.selectors.user_queries
+        )
 
 
 class KimiPlugin(CalibrationPendingPlugin):

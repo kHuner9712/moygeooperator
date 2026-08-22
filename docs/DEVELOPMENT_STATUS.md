@@ -34,7 +34,7 @@
 | 2 | DeepSeek | EXECUTION_READY | 已完成真实登录、发送意图、流式/最终结构、回答落盘及校准会话删除验证 |
 | 2 | 千问 | CALIBRATION_REQUIRED | 已完成真实登录、唯一发送控件、用户/回答容器、流式/完成标记与实时保存校准；2026-08-23 固定问题返回“系统超时，请稍后重试”，已按平台错误失败关闭；停止控件、会话恢复/删除和正常回答仍待验证 |
 | 2 | Gemini | EXECUTION_READY | 已完成真实登录、唯一发送、2 次实时 checkpoint、流式停止/最终结构、回答落盘、目标会话删除及历史缺失复核 |
-| 3 | 元宝 | CALIBRATION_REQUIRED | 已有独立 Session、官方入口、结构采样和 fail-closed 门禁 |
+| 3 | 元宝 | EXECUTION_READY | 已完成真实登录与唯一发送预检；固定精确回答和 01–80 长流式回答均成功，长回答实时保存 27 个 checkpoint；已观察用户/回答、生成、无 id 停止控件和最终完成结构；校准会话删除后 URL 退出、历史项 1→0、校准内容消失且登录态健康 |
 | 3 | Kimi | CALIBRATION_REQUIRED | 已有独立 Session、官方入口、结构采样和 fail-closed 门禁 |
 | 3 | Grok | CALIBRATION_REQUIRED | 已有独立 Session、官方入口、结构采样和 fail-closed 门禁 |
 | 3 | Perplexity | CALIBRATION_REQUIRED | 已有独立 Session、官方入口、结构采样和 fail-closed 门禁 |

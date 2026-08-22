@@ -311,7 +311,8 @@ class ObservedWebChatPlugin:
                 """() => {
                   const content = document.querySelector(
                     "article, [data-message-author-role], [data-testid^='conversation-turn-'], "
-                    + "[class*='message-list-'] .v_list_row, .ds-message, user-query-content, model-response"
+                    + "[class*='message-list-'] .v_list_row, .ds-message, user-query-content, model-response, "
+                    + ".agent-chat__list__item--human"
                   );
                   if (content) return 'CONVERSATION_CONTENT';
                   const challenge = document.querySelector(

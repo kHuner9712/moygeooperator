@@ -57,6 +57,28 @@ class PlatformPolicyTestCase(unittest.TestCase):
             self.assertNotIn(calibrated, status["missing"])
         self.assertIn("stop_controls", status["missing"])
 
+    def test_yuanbao_uses_observed_two_level_conversation_url(self) -> None:
+        plugin = live_plugin("yuanbao")
+        self.assertTrue(plugin.is_home_url("https://yuanbao.tencent.com/chat/"))
+        self.assertTrue(plugin.is_home_url("https://yuanbao.tencent.com/chat/naQivTmsDa"))
+        self.assertTrue(
+            plugin.is_conversation_url(
+                "https://yuanbao.tencent.com/chat/naQivTmsDa/0PpICk4R0gi"
+            )
+        )
+        self.assertFalse(
+            plugin.is_conversation_url("https://yuanbao.tencent.com/chat/naQivTmsDa")
+        )
+        self.assertFalse(
+            plugin.is_conversation_url(
+                "https://example.com/chat/naQivTmsDa/0PpICk4R0gi"
+            )
+        )
+        status = plugin.calibration_status()
+        self.assertEqual(status["support_status"], "EXECUTION_READY")
+        self.assertTrue(status["dispatch_eligible"])
+        self.assertEqual(status["missing"], [])
+
     def test_external_labels_are_canonicalized(self) -> None:
         self.assertEqual(canonical_platform("ChatGPT"), "chatgpt")
         self.assertEqual(canonical_platform("豆包"), "doubao")
@@ -86,7 +108,10 @@ class PlatformPolicyTestCase(unittest.TestCase):
         self.assertTrue(plugins["doubao"].calibration_complete)
         self.assertTrue(plugins["deepseek"].calibration_complete)
         self.assertTrue(plugins["gemini"].calibration_complete)
-        for platform in EXPECTED_PLATFORMS - {"chatgpt", "doubao", "deepseek", "gemini"}:
+        self.assertTrue(plugins["yuanbao"].calibration_complete)
+        for platform in EXPECTED_PLATFORMS - {
+            "chatgpt", "doubao", "deepseek", "gemini", "yuanbao"
+        }:
             with self.subTest(platform=platform):
                 plugin = live_plugin(platform)
                 status = plugin.calibration_status()

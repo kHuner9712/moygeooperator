@@ -172,4 +172,4 @@ Playwright 管理的 headed Chrome 必须显式设置 chromium_sandbox=True；�
 - 国外：Grok、Gemini、ChatGPT、Perplexity。
 - 明确禁止：Claude/Anthropic。任务导入、Session、插件解析和控制台不得出现可用入口。
 
-ChatGPT、豆包为 `EXECUTION_READY`。其余平台首次接入为 `CALIBRATION_REQUIRED`，此时只允许人工登录与隐私安全的结构快照。API 的普通执行入口必须拒绝，Worker Supervisor 即使直接发现已批准任务也必须在打开浏览器前以 `PAGE_ABNORMAL + PLUGIN_CALIBRATION_REQUIRED` 失败关闭。只有插件全链路真实校准完成并通过回归测试后，才能解除调度门禁。
+ChatGPT、豆包、DeepSeek、Gemini、元宝为 `EXECUTION_READY`；千问、Kimi、Grok、Perplexity 保持 `CALIBRATION_REQUIRED`。后者只允许人工登录与隐私安全的结构快照，API 的普通执行入口必须拒绝，Worker Supervisor 即使直接发现已批准任务也必须在打开浏览器前以 `PAGE_ABNORMAL + PLUGIN_CALIBRATION_REQUIRED` 失败关闭。只有插件全链路真实校准完成并通过回归测试后，才能解除调度门禁。元宝的上线证据包括 27 次流式 checkpoint、独立生成/停止/最终信号和真实校准会话删除验证。
