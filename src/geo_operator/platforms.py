@@ -16,7 +16,7 @@ PLATFORM_DEFINITIONS = (
     PlatformDefinition("doubao", "豆包", "CN", 1, "https://www.doubao.com/chat/"),
     PlatformDefinition("chatgpt", "ChatGPT", "GLOBAL", 1, "https://chatgpt.com/"),
     PlatformDefinition("deepseek", "DeepSeek", "CN", 2, "https://chat.deepseek.com/"),
-    PlatformDefinition("qwen", "千问", "CN", 2, "https://chat.qwen.ai/"),
+    PlatformDefinition("qwen", "千问", "CN", 2, "https://www.qianwen.com/"),
     PlatformDefinition("gemini", "Gemini", "GLOBAL", 2, "https://gemini.google.com/app"),
     PlatformDefinition("yuanbao", "元宝", "CN", 3, "https://yuanbao.tencent.com/chat/"),
     PlatformDefinition("kimi", "Kimi", "CN", 3, "https://www.kimi.com/"),

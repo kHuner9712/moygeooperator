@@ -108,7 +108,7 @@ class DeepSeekPlugin(ObservedWebChatPlugin):
 class QwenPlugin(CalibrationPendingPlugin):
     phase = 2
     name = "qwen"
-    home_url = "https://chat.qwen.ai/"
+    home_url = "https://www.qianwen.com/"
     conversation_link_selectors = ("a[href*='/c/']",)
     conversation_path_prefixes = ("/c/",)
     selectors = PhaseOneSelectors(

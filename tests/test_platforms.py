@@ -36,6 +36,16 @@ class PlatformPolicyTestCase(unittest.TestCase):
             self.assertEqual(parsed.scheme, "https")
             self.assertTrue(parsed.netloc)
 
+    def test_qwen_uses_current_mainland_official_origin(self) -> None:
+        qwen = next(
+            definition for definition in PLATFORM_DEFINITIONS
+            if definition.platform == "qwen"
+        )
+        self.assertEqual(qwen.home_url, "https://www.qianwen.com/")
+        plugin = live_plugin("qwen")
+        self.assertEqual(plugin.home_url, "https://www.qianwen.com/")
+        self.assertFalse(plugin.is_home_url("https://chat.qwen.ai/"))
+
     def test_external_labels_are_canonicalized(self) -> None:
         self.assertEqual(canonical_platform("ChatGPT"), "chatgpt")
         self.assertEqual(canonical_platform("豆包"), "doubao")
