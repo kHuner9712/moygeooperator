@@ -232,6 +232,27 @@ class ExecutionStateMachine:
             )
         return self.get(execution_id)
 
+    def record_operation_pacing(self, execution_id: str, delay_seconds: float) -> None:
+        if delay_seconds <= 0:
+            raise ValueError("Operation pacing delay must be positive")
+        with self.database.transaction() as connection:
+            row = self._get(connection, execution_id)
+            current = ExecutionState(str(row["state"]))
+            if current != ExecutionState.SEND_QUERY:
+                raise ValueError("Operation pacing may only be recorded before query send")
+            self._event(
+                connection,
+                execution_id,
+                "OPERATION_PACING_SCHEDULED",
+                current,
+                current,
+                {
+                    "delay_seconds": round(delay_seconds, 3),
+                    "purpose": "PRE_SEND_ACCOUNT_SAFETY_ONLY",
+                    "completion_signal": False,
+                },
+            )
+
     def record_effect_intent(
         self, execution_id: str, effect_type: str, idempotency_key: str
     ) -> dict[str, Any]:

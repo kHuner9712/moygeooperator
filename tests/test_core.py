@@ -6,6 +6,8 @@ from pathlib import Path
 
 from geo_operator.approvals import ApprovalService
 from geo_operator.browser import ExecutionStateMachine
+from geo_operator.browser.worker import WorkerConfig
+from geo_operator.core.config import Settings
 from geo_operator.core.db import Database
 from geo_operator.core.storage import ArtifactStore
 from geo_operator.discovery import PublicDiscoveryService
@@ -119,6 +121,19 @@ class CoreTestCase(unittest.TestCase):
         run = engine.create(self.tenant["id"], "doubao", "manual")
         with self.assertRaises(ValueError):
             engine.transition(run["id"], ExecutionState.SEND_QUERY)
+
+    def test_browser_action_delay_configuration_is_validated(self) -> None:
+        with self.assertRaises(ValueError):
+            WorkerConfig(action_delay_min=-0.1)
+        with self.assertRaises(ValueError):
+            WorkerConfig(action_delay_min=2.0, action_delay_max=1.0)
+        with self.assertRaises(ValueError):
+            Settings(
+                Path("data"),
+                Path("operator.sqlite3"),
+                browser_action_delay_min=2.0,
+                browser_action_delay_max=1.0,
+            )
 
 
 if __name__ == "__main__":

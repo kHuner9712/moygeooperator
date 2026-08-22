@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
+from geo_operator import __version__
 from geo_operator.approvals import ApprovalService
 from geo_operator.browser import ExecutionStateMachine
 from geo_operator.browser.lease import ExecutionLeaseManager
@@ -110,7 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     results = ResultService(database, artifacts)
     result_packages = ResultPackageService(database, artifacts, approvals)
 
-    app = FastAPI(title="GEO Operator V2", version="0.3.0")
+    app = FastAPI(title="GEO Operator V2", version=__version__)
     app.include_router(mock_router)
     app.state.services = {
         "database": database,

@@ -36,6 +36,8 @@ uv run playwright install chromium
 ```
 
 默认配置见 `.env.example`。控制台强制绑定 loopback 地址，不能暴露到公网。
+生产 Worker 默认在每次真实发送前随机等待 0.8–2.0 秒；可用 \`GEO_OPERATOR_BROWSER_ACTION_DELAY_MIN\` 与 \`GEO_OPERATOR_BROWSER_ACTION_DELAY_MAX\` 调整。该等待只用于低频操作节奏，回答完成仍只依据平台 DOM 多信号与稳定窗口。
+
 
 ## 运行方式
 

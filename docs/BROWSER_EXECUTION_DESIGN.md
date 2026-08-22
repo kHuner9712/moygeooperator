@@ -68,6 +68,8 @@ COMPLETED → WAIT_HUMAN_APPROVAL(RESULT_EXPORT) → EXPORT
 - platform_error_absent
 
 response_text_stable 使用多次观测的稳定窗口，但稳定窗口本身不是唯一完成条件。固定 sleep 和随机等待只用于节奏控制，不得作为完成证据。
+生产 Worker 在实际调用平台发送动作前，从配置区间随机选择一次延迟，并写入 \`OPERATION_PACING_SCHEDULED\` 事件；事件载荷显式标记 \`completion_signal=false\`。已确认发送的断点恢复路径不会再次等待或再次发送。
+
 
 若信号冲突、超时或 DOM 无法识别，进入 PAUSED/PAGE_ABNORMAL。
 

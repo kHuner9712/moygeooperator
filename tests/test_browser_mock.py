@@ -106,6 +106,7 @@ class BrowserMockTestCase(unittest.TestCase):
         *,
         crash_hook=None,
         timeout: float = 8,
+        action_delay: float = 0.0,
     ) -> dict[str, object]:
         worker = BrowserWorker(
             self.database,
@@ -117,6 +118,8 @@ class BrowserMockTestCase(unittest.TestCase):
                 poll_interval=0.05,
                 stable_window=0.25,
                 response_timeout=timeout,
+                action_delay_min=action_delay,
+                action_delay_max=action_delay,
                 headless=True,
             ),
             crash_hook=crash_hook,
@@ -174,8 +177,21 @@ class BrowserMockTestCase(unittest.TestCase):
 
     def test_normal_flow_to_approved_result_zip(self) -> None:
         package, execution = self.create_execution("normal")
-        completed = self.run_worker(execution["id"], "normal")
+        completed = self.run_worker(execution["id"], "normal", action_delay=0.001)
         self.assertEqual(completed["state"], "COMPLETED")
+        pacing = self.database.one(
+            """SELECT payload_json FROM execution_events
+               WHERE execution_id=? AND event_type='OPERATION_PACING_SCHEDULED'""",
+            (execution["id"],),
+        )
+        self.assertIsNotNone(pacing)
+        pacing_payload = json.loads(pacing["payload_json"])
+        self.assertEqual(pacing_payload["delay_seconds"], 0.001)
+        self.assertEqual(
+            pacing_payload["purpose"], "PRE_SEND_ACCOUNT_SAFETY_ONLY"
+        )
+        self.assertFalse(pacing_payload["completion_signal"])
+
         checkpoints = self.database.all(
             "SELECT * FROM response_checkpoints WHERE execution_id=?",
             (execution["id"],),

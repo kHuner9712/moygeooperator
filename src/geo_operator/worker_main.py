@@ -27,7 +27,11 @@ def main() -> None:
         ExecutionLeaseManager(database),
         ResultService(database, artifacts),
         PluginRegistry(database, f"http://{settings.host}:{settings.port}"),
-        WorkerConfig(headless=False),
+        WorkerConfig(
+            headless=False,
+            action_delay_min=settings.browser_action_delay_min,
+            action_delay_max=settings.browser_action_delay_max,
+        ),
     )
     asyncio.run(supervisor.run_forever())
 

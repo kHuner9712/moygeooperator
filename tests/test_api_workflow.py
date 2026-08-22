@@ -63,6 +63,7 @@ class ApiWorkflowTestCase(unittest.TestCase):
         health = self.client.get("/api/health").json()
         self.assertEqual(health["python"], "3.12")
         self.assertEqual(health["browser_mode"], "headed")
+        self.assertEqual(self.client.get("/openapi.json").json()["info"]["version"], "0.3.0")
         platforms = {item["platform"]: item for item in self.client.get("/api/platforms").json()}
         self.assertTrue(platforms["chatgpt"]["complete"])
         self.assertTrue(platforms["doubao"]["complete"])
@@ -131,6 +132,9 @@ class ApiWorkflowTestCase(unittest.TestCase):
         self.assertIn("平台支持与校准", html)
         self.assertIn("Claude 明确禁止接入", html)
         self.assertIn('id="sessionControls"', html)
+        self.assertIn("const paused=x.policy==='PAUSED'", html)
+        self.assertIn('disabled title="平台接入已暂停"', html)
+        self.assertIn("千问接入已暂停", html)
 
     def test_session_api_rejects_unsafe_identity_before_browser_launch(self) -> None:
         unsafe = self.client.post(

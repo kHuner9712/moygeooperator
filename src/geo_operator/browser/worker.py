@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -31,6 +32,14 @@ class WorkerConfig:
     observation_error_grace: float = 5.0
     delete_confirmation_timeout: float = 10.0
     headless: bool = False
+    action_delay_min: float = 0.0
+    action_delay_max: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.action_delay_min < 0:
+            raise ValueError("Browser action delay minimum cannot be negative")
+        if self.action_delay_max < self.action_delay_min:
+            raise ValueError("Browser action delay maximum must be at least the minimum")
 
 
 class BrowserWorker:
@@ -282,6 +291,15 @@ class BrowserWorker:
 
         return await self._pause(execution_id, PauseReason.COMPLETION_UNCERTAIN.value, page.url)
 
+    async def _pace_before_query(self, execution_id: str) -> None:
+        if self.config.action_delay_max <= 0:
+            return
+        delay = random.uniform(self.config.action_delay_min, self.config.action_delay_max)
+        if delay <= 0:
+            return
+        self.engine.record_operation_pacing(execution_id, delay)
+        await asyncio.sleep(delay)
+
     async def _send_idempotently(
         self, execution: dict[str, Any], task: dict[str, Any], plugin: Any, page: Any
     ) -> dict[str, Any] | None:
@@ -356,6 +374,7 @@ class BrowserWorker:
         page: Any,
     ) -> dict[str, Any] | None:
         execution_id = str(execution["id"])
+        await self._pace_before_query(execution_id)
         try:
             await plugin.send_query(page, str(task["prompt"]))
         except SideEffectNotAttempted as exc:

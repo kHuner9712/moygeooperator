@@ -54,7 +54,7 @@ button.secondary{background:#e8edf3;color:#26384c}.row{display:flex;gap:8px;alig
  </section>
  <section class="card full"><h2>客户档案</h2><textarea id="profileJson" style="width:100%;min-height:100px" placeholder='{"name":"KZQ","website":"","notes":""}'></textarea><div class="actions"><button onclick="loadProfile()">查看客户资料</button><button onclick="buildProfile()">从资料自动整理并提交</button><button class="good" onclick="saveProfile()">保存草稿并提交审批</button><button class="secondary" onclick="exportProfile()">导出 CLIENT_PROFILE.zip</button></div><div id="profileStatus" class="muted"></div></section>
  <section class="card"><h2>人工审批</h2><div id="approvals" class="list"></div></section>
- <section class="card"><h2>平台支持与校准</h2><div class="muted" style="margin-bottom:8px">允许九个平台；Claude 明确禁止接入。CALIBRATION_REQUIRED 平台只允许登录与结构采样，不会调度真实问题。</div><div id="platforms" class="list"></div></section>
+ <section class="card"><h2>平台支持与校准</h2><div class="muted" style="margin-bottom:8px">收录九个平台；千问接入已暂停；Claude 明确禁止接入。CALIBRATION_REQUIRED 平台只允许登录与结构采样，不会调度真实问题。</div><div id="platforms" class="list"></div></section>
  <section class="card"><h2>浏览器 Session</h2>
   <div id="sessionControls" class="list"></div>
   <div id="calibrationStatus" class="muted" style="margin-top:8px">首次登录使用无 Playwright 控制的系统 Chrome。登录完成后先关闭系统 Chrome，再检测结构；检测完成后释放校准 Session，独立 Worker 才能接管。快照不读取页面文本、Cookie 或本地存储。</div>
@@ -150,7 +150,13 @@ function syncSessionInterventions(items){
 function renderPlatforms(items){
  const rows=items.filter(x=>x.platform!=='mock');
  byId('platforms').innerHTML=rows.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.label)+' <span class="muted">('+esc(x.platform)+')</span></b><span class="state '+(x.complete?'COMPLETED':'PAUSED')+'">'+esc(x.support_status)+'</span></div><div class="muted">Phase '+esc(x.phase)+' · '+(x.region==='CN'?'国内':'国外')+' · '+esc(x.home_url)+'</div><div class="muted">已观察：'+esc(x.observed_at||'尚未完成登录后 DOM 校准')+'</div><div class="muted">待校准：'+esc((x.missing||[]).join(', ')||'无')+'</div></div>').join('');
- byId('sessionControls').innerHTML=rows.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.label)+'</b><span class="state '+(x.complete?'COMPLETED':'PAUSED')+'">'+esc(x.support_status)+'</span></div><div class="actions"><button onclick="openSession(\''+esc(x.platform)+'\')">系统 Chrome 登录</button><button class="secondary" onclick="checkCalibration(\''+esc(x.platform)+'\')">检测登录/结构</button><button class="good" onclick="releaseSession(\''+esc(x.platform)+'\')">关闭并释放</button></div></div>').join('');
+ const controls=rows.map(x=>{
+  const paused=x.policy==='PAUSED';
+  const disabled=paused?' disabled title="平台接入已暂停"':'';
+  const notice=paused?'<div class="muted">接入已暂停：'+esc(x.pause_reason||'等待人工解除')+'</div>':'';
+  return '<div class="item"><div class="item-head"><b>'+esc(x.label)+'</b><span class="state '+(x.complete?'COMPLETED':'PAUSED')+'">'+esc(x.support_status)+'</span></div><div class="actions"><button'+disabled+' onclick="openSession(\''+esc(x.platform)+'\')">系统 Chrome 登录</button><button class="secondary"'+disabled+' onclick="checkCalibration(\''+esc(x.platform)+'\')">检测登录/结构</button><button class="good" onclick="releaseSession(\''+esc(x.platform)+'\')">关闭并释放</button></div>'+notice+'</div>';
+ }).join('');
+ byId('sessionControls').innerHTML=controls;
 }
 async function uploadSource(){try{const file=byId('sourceFile').files[0];if(!file||!tenantId())throw Error('请选择客户和资料文件');await api('/api/tenants/'+tenantId()+'/sources',{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:await file.arrayBuffer()});byId('sourceFile').value='';notify('客户资料已保存并完成机械提取');await refreshTenantData()}catch(e){notify(e.message,true)}}
 async function crawlWebsite(){try{if(!tenantId())throw Error('请选择客户');notify('官网抓取进行中');const result=await api('/api/tenants/'+tenantId()+'/website-crawls',{method:'POST',body:JSON.stringify({start_url:byId('websiteUrl').value,max_pages:Number(byId('websiteMax').value||20)})});notify('官网抓取完成：'+result.collected+' 成功，'+result.failed+' 失败');await refreshTenantData()}catch(e){notify(e.message,true)}}
