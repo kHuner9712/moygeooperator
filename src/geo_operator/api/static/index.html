@@ -39,11 +39,9 @@ button.secondary{background:#e8edf3;color:#26384c}.row{display:flex;gap:8px;alig
 <div class="grid">
  <section class="card full"><h2>客户档案</h2><textarea id="profileJson" style="width:100%;min-height:100px" placeholder='{"name":"KZQ","website":"","notes":""}'></textarea><div class="actions"><button onclick="loadProfile()">查看客户资料</button><button class="good" onclick="saveProfile()">保存草稿并提交审批</button><button class="secondary" onclick="exportProfile()">导出 CLIENT_PROFILE.zip</button></div><div id="profileStatus" class="muted"></div></section>
  <section class="card"><h2>人工审批</h2><div id="approvals" class="list"></div></section>
- <section class="card"><h2>Phase 1 平台校准</h2><div id="platforms" class="list"></div></section>
+ <section class="card"><h2>平台支持与校准</h2><div class="muted" style="margin-bottom:8px">允许九个平台；Claude 明确禁止接入。CALIBRATION_REQUIRED 平台只允许登录与结构采样，不会调度真实问题。</div><div id="platforms" class="list"></div></section>
  <section class="card"><h2>浏览器 Session</h2>
-  <div class="row"><button onclick="openSession('chatgpt')">使用系统 Chrome 登录 ChatGPT</button><button onclick="openSession('doubao')">使用系统 Chrome 登录豆包</button></div>
-  <div class="row" style="margin-top:8px"><button class="secondary" onclick="checkCalibration('chatgpt')">检测 ChatGPT 登录/结构</button><button class="secondary" onclick="checkCalibration('doubao')">检测豆包登录/结构</button></div>
-  <div class="row" style="margin-top:8px"><button class="good" onclick="releaseSession('chatgpt')">关闭校准 Chrome 并释放 ChatGPT</button><button class="good" onclick="releaseSession('doubao')">关闭校准 Chrome 并释放豆包</button></div>
+  <div id="sessionControls" class="list"></div>
   <div id="calibrationStatus" class="muted" style="margin-top:8px">首次登录使用无 Playwright 控制的系统 Chrome。登录完成后先关闭系统 Chrome，再检测结构；检测完成后释放校准 Session，独立 Worker 才能接管。快照不读取页面文本、Cookie 或本地存储。</div>
   <div id="sessions" class="list" style="margin-top:12px"></div>
  </section>
@@ -121,7 +119,11 @@ function syncSessionInterventions(items){
   card.insertAdjacentHTML('beforeend','<div class="muted">\u4eba\u5de5\u63a5\u7ba1\u539f\u56e0\uff1a'+esc(item.intervention_reason)+' &middot; '+esc(item.blocking_execution_id||'')+'</div>');
  });
 }
-function renderPlatforms(items){const rows=items.filter(x=>x.phase===1);byId('platforms').innerHTML=rows.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.platform)+'</b><span class="state '+(x.complete?'COMPLETED':'PAUSED')+'">'+(x.complete?'READY':'PARTIAL')+'</span></div><div class="muted">已观察：'+esc(x.observed_at||'-')+'</div><div class="muted">待真实回答校准：'+esc((x.missing||[]).join(', ')||'无')+'</div></div>').join('')}
+function renderPlatforms(items){
+ const rows=items.filter(x=>x.platform!=='mock');
+ byId('platforms').innerHTML=rows.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.label)+' <span class="muted">('+esc(x.platform)+')</span></b><span class="state '+(x.complete?'COMPLETED':'PAUSED')+'">'+esc(x.support_status)+'</span></div><div class="muted">Phase '+esc(x.phase)+' · '+(x.region==='CN'?'国内':'国外')+' · '+esc(x.home_url)+'</div><div class="muted">已观察：'+esc(x.observed_at||'尚未完成登录后 DOM 校准')+'</div><div class="muted">待校准：'+esc((x.missing||[]).join(', ')||'无')+'</div></div>').join('');
+ byId('sessionControls').innerHTML=rows.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.label)+'</b><span class="state '+(x.complete?'COMPLETED':'PAUSED')+'">'+esc(x.support_status)+'</span></div><div class="actions"><button onclick="openSession(\''+esc(x.platform)+'\')">系统 Chrome 登录</button><button class="secondary" onclick="checkCalibration(\''+esc(x.platform)+'\')">检测登录/结构</button><button class="good" onclick="releaseSession(\''+esc(x.platform)+'\')">关闭并释放</button></div></div>').join('');
+}
 async function createTenant(){try{await api('/api/tenants',{method:'POST',body:JSON.stringify({name:byId('tenantName').value})});byId('tenantName').value='';notify('客户已创建');refresh()}catch(e){notify(e.message,true)}}
 let currentProfileId='';
 async function loadProfile(){try{const profile=await api('/api/tenants/'+tenantId()+'/profile');currentProfileId=profile.id;byId('profileJson').value=JSON.stringify(profile.profile,null,2);byId('profileStatus').textContent=profile.status+' · '+profile.updated_at}catch(e){byId('profileStatus').textContent='尚无客户档案'}}
@@ -131,7 +133,7 @@ async function decide(id,approved){const actor=prompt('操作者标识','operato
 async function openSession(platform){try{await api('/api/sessions/open',{method:'POST',body:JSON.stringify({tenant_id:tenantId(),platform,account_id:'manual'})});notify('已用原生系统 Chrome 打开 '+platform+'；登录完成后请关闭该窗口');refresh()}catch(e){notify(e.message,true)}}
 async function checkCalibration(platform){try{const data=await api('/api/sessions/calibration-snapshot',{method:'POST',body:JSON.stringify({tenant_id:tenantId(),platform,account_id:'manual'})});byId('calibrationStatus').textContent=platform+' · 登录='+data.logged_in+' · 结构节点='+data.elements.length+' · 插件完整='+data.plugin.complete;notify('已完成仅结构校准快照')}catch(e){notify(e.message,true)}}
 async function releaseSession(platform){try{await api('/api/sessions/close',{method:'POST',body:JSON.stringify({tenant_id:tenantId(),platform,account_id:'manual'})});notify(platform+' 校准 Session 已关闭并释放给独立 Worker');refresh()}catch(e){notify(e.message,true)}}
-async function runExecution(id){try{await api('/api/executions/'+id+'/run',{method:'POST'});notify('已排队等待独立 Worker');refresh()}catch(e){notify(e.message,true)}}
+async function runExecution(id){try{await api('/api/executions/'+id+'/run',{method:'POST'});notify('已排队等待独立 Worker；待校准平台会失败关闭，不会发送问题');refresh()}catch(e){notify(e.message,true)}}
 async function pauseExecution(id){try{await api('/api/executions/'+id+'/pause',{method:'POST'});refresh()}catch(e){notify(e.message,true)}}
 async function continueExecution(id){if(!confirm('确认人工处理已完成？独立 Worker 会先重新验证页面，验证失败仍保持暂停。'))return;try{await api('/api/executions/'+id+'/continue',{method:'POST',body:JSON.stringify({note:'operator completed takeover'})});notify('已排队等待独立 Worker 复核');refresh()}catch(e){notify(e.message,true)}}
 async function showPauseEvidence(id){try{const evidence=await api('/api/executions/'+id+'/pause-evidence');const image=evidence.screenshot_path?'<img alt="暂停错误截图" style="max-width:100%;margin-top:8px;border-radius:7px" src="/api/executions/'+id+'/pause-screenshot?ts='+Date.now()+'">':'';const calibration=evidence.calibration_block?'<div class="muted">校准阻塞：'+esc(evidence.calibration_block)+' · '+esc(evidence.message||'')+'</div>':'';const structure=evidence.structure_path?'<div class="muted">结构证据：'+esc(evidence.structure_path)+' · '+esc(evidence.structure_privacy||'')+'</div>':'';byId('cp-'+id).innerHTML='<div class="muted">'+esc(evidence.created_at)+' · '+esc(evidence.page_url||'')+'</div>'+calibration+structure+image}catch(e){notify(e.message,true)}}async function showCheckpoints(id){try{const rows=await api('/api/executions/'+id+'/checkpoints');byId('cp-'+id).innerHTML=rows.length?'<div class="muted">最新 checkpoint #'+rows[0].sequence+' · '+esc(rows[0].captured_at)+' · '+esc(rows[0].content_sha256)+'</div>':empty('尚无 checkpoint')}catch(e){notify(e.message,true)}}

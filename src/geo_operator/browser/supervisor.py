@@ -95,6 +95,17 @@ class WorkerSupervisor:
         )
         try:
             plugin = self.plugins.for_execution(execution)
+            if not getattr(plugin, "calibration_complete", True):
+                self.engine.pause(
+                    str(execution["id"]),
+                    PauseReason.PAGE_ABNORMAL,
+                    details={
+                        "calibration_block": "PLUGIN_CALIBRATION_REQUIRED",
+                        "platform": execution["platform"],
+                        "missing": plugin.calibration_status()["missing"],
+                    },
+                )
+                return True
             if execution["state"] == "PAUSED":
                 await worker.resume_after_human(str(execution["id"]), plugin)
             else:

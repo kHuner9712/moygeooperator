@@ -163,3 +163,13 @@ Playwright 管理的 headed Chrome 必须显式设置 chromium_sandbox=True；�
 - 回答节点、流式指示、停止控件、问题节点和删除动作只能从真实回答会话观察，不允许猜测选择器。
 - 校准结构证据只保存可见节点的标签与有限属性；不读取节点正文、Cookie、local storage 或 session storage。
 - 插件总体 calibration_complete 只有在发送、问题对账、回答完成和删除全链路都完成校准后才为 true。
+
+## 10. 九平台目录与调度门禁
+
+统一允许清单：
+
+- 国内：豆包、元宝、千问、DeepSeek、Kimi。
+- 国外：Grok、Gemini、ChatGPT、Perplexity。
+- 明确禁止：Claude/Anthropic。任务导入、Session、插件解析和控制台不得出现可用入口。
+
+ChatGPT、豆包为 `EXECUTION_READY`。其余平台首次接入为 `CALIBRATION_REQUIRED`，此时只允许人工登录与隐私安全的结构快照。API 的普通执行入口必须拒绝，Worker Supervisor 即使直接发现已批准任务也必须在打开浏览器前以 `PAGE_ABNORMAL + PLUGIN_CALIBRATION_REQUIRED` 失败关闭。只有插件全链路真实校准完成并通过回归测试后，才能解除调度门禁。

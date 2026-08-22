@@ -147,4 +147,11 @@ data/tenants/{tenant_id}/
 - Phase 2：DeepSeek、千问、Gemini
 - Phase 3：元宝、Kimi、Grok、Perplexity
 
+平台策略使用统一允许清单。Claude/Anthropic 被明确禁止，任务导入、Session、插件解析和控制界面都必须拒绝，不能作为未知平台静默降级。
+
+新增平台分两级：
+
+- `CALIBRATION_REQUIRED`：仅开放官方入口人工登录、独立 persistent Session 和隐私安全的结构快照；Worker 调度门禁关闭。
+- `EXECUTION_READY`：回答完成信号、实时保存、幂等恢复、删除及删除确认均经真实账号验证，才允许执行任务。
+
 真实平台插件开发前，必须先通过模拟平台的状态机、崩溃恢复和保存测试。

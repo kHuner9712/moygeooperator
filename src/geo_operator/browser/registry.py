@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from geo_operator.browser.plugins.catalog import live_plugin
 from geo_operator.browser.plugins.mock import MockAIPlugin
-from geo_operator.browser.plugins.phase1 import ChatGPTPlugin, DoubaoPlugin
 from geo_operator.core.db import Database
+from geo_operator.platforms import canonical_platform
 
 
 class PluginRegistry:
@@ -18,11 +19,7 @@ class PluginRegistry:
         if not task:
             raise ValueError("Execution task is missing")
         metadata = json.loads(str(task["metadata_json"]))
-        platform = str(execution["platform"])
+        platform = canonical_platform(execution["platform"])
         if platform == "mock":
             return MockAIPlugin(self.control_base_url, str(metadata.get("mock_mode", "normal")))
-        if platform == "chatgpt":
-            return ChatGPTPlugin()
-        if platform == "doubao":
-            return DoubaoPlugin()
-        raise ValueError(f"Platform plugin is not implemented: {platform}")
+        return live_plugin(platform)

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from geo_operator.approvals import ApprovalService
 from geo_operator.browser import ExecutionStateMachine
 from geo_operator.browser.lease import ExecutionLeaseManager
-from geo_operator.browser.plugins.phase1 import ChatGPTPlugin, DoubaoPlugin
+from geo_operator.browser.plugins.catalog import live_plugin, live_plugins
 from geo_operator.browser.session import (
     BrowserSessionManager,
     ManualLoginLauncher,
@@ -28,6 +28,7 @@ from geo_operator.discovery import PublicDiscoveryService
 from geo_operator.domain import PauseReason
 from geo_operator.exports import ResultPackageService
 from geo_operator.mock_platform import router as mock_router
+from geo_operator.platforms import platform_definition
 from geo_operator.profiles import ClientProfileService
 from geo_operator.results import ResultService
 from geo_operator.tasks import DuplicateTaskPackageError, TaskPackageService
@@ -107,13 +108,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "result_packages": result_packages,
     }
 
-    def phase_one_plugin(platform: str) -> ChatGPTPlugin | DoubaoPlugin:
-        if platform == "chatgpt":
-            return ChatGPTPlugin()
-        if platform == "doubao":
-            return DoubaoPlugin()
-        raise ValueError("Only ChatGPT and Doubao sessions are supported")
-
     def require_tenant(tenant_id: str) -> None:
         if not database.one("SELECT id FROM tenants WHERE id=?", (tenant_id,)):
             raise ValueError("Tenant not found")
@@ -125,11 +119,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/platforms")
     def platform_status() -> list[dict[str, object]]:
-        return [
-            ChatGPTPlugin().calibration_status(),
-            DoubaoPlugin().calibration_status(),
-            {"platform": "mock", "phase": 0, "complete": True, "missing": []},
-        ]
+        statuses: list[dict[str, object]] = []
+        for plugin in live_plugins():
+            definition = platform_definition(plugin.name)
+            status = plugin.calibration_status()
+            status.update(
+                {
+                    "label": definition.label,
+                    "region": definition.region,
+                    "home_url": definition.home_url,
+                    "policy": "ALLOWED",
+                }
+            )
+            statuses.append(status)
+        statuses.append(
+            {
+                "platform": "mock",
+                "label": "Mock",
+                "region": "INTERNAL",
+                "phase": 0,
+                "complete": True,
+                "support_status": "TEST_ONLY",
+                "dispatch_eligible": True,
+                "missing": [],
+                "policy": "TEST_ONLY",
+            }
+        )
+        return statuses
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -243,6 +259,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             execution = engine.get(execution_id)
             if execution["state"] in {"COMPLETED", "FAILED", "PAUSED"}:
                 raise ValueError("Execution is not eligible for normal worker dispatch")
+            if execution["platform"] != "mock":
+                plugin = live_plugin(execution["platform"])
+                if not plugin.calibration_complete:
+                    raise ValueError(
+                        f"{execution['platform']} is CALIBRATION_REQUIRED; "
+                        "real task dispatch is disabled"
+                    )
             return {"status": "queued_for_independent_worker", "execution_id": execution_id}
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -321,7 +344,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def open_session(body: SessionOpen) -> dict[str, str]:
         try:
             require_tenant(body.tenant_id)
-            plugin = phase_one_plugin(body.platform)
+            plugin = live_plugin(body.platform)
             manual_logins.open(body.tenant_id, body.platform, body.account_id, plugin.home_url)
             return {
                 "status": "WAIT_MANUAL_LOGIN",
@@ -343,7 +366,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Return visible DOM structure only: no text, cookies, storage, or screenshots."""
         try:
             require_tenant(body.tenant_id)
-            plugin = phase_one_plugin(body.platform)
+            plugin = live_plugin(body.platform)
             target_url = body.target_url
             if target_url:
                 target = urlsplit(target_url)
@@ -372,7 +395,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise ValueError("Delete confirmation inspection requires menu inspection")
             if body.inspect_conversation_menu:
                 if body.platform not in {"chatgpt", "doubao"} or not target_url:
-                    raise ValueError("Conversation menu inspection requires a Phase 1 target_url")
+                    raise ValueError(
+                        "Conversation menu inspection requires a calibrated ChatGPT/Doubao target_url"
+                    )
                 if body.platform == "chatgpt":
                     menu_button = page.locator("button[data-testid='conversation-options-button']")
                     if await menu_button.count() != 1 or not await menu_button.is_visible():
@@ -485,7 +510,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def close_session(body: SessionOpen) -> dict[str, str]:
         try:
             require_tenant(body.tenant_id)
-            phase_one_plugin(body.platform)
+            live_plugin(body.platform)
             BrowserSessionManager.validate_identity(body.platform, body.account_id)
             manual_logins.ensure_closed(body.tenant_id, body.platform, body.account_id)
             await sessions.close(body.tenant_id, body.platform, body.account_id)

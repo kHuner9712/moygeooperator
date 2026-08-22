@@ -12,6 +12,7 @@ from typing import Any
 from geo_operator.core.db import Database
 from geo_operator.core.storage import ArtifactStore
 from geo_operator.core.time import utc_now
+from geo_operator.platforms import canonical_platform
 
 SESSION_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 
@@ -174,8 +175,9 @@ class BrowserSessionManager:
 
     @staticmethod
     def validate_identity(platform: str, account_id: str) -> None:
-        if not SESSION_PART.fullmatch(platform):
-            raise ValueError("Invalid session platform")
+        canonical = canonical_platform(platform)
+        if platform != canonical or not SESSION_PART.fullmatch(platform):
+            raise ValueError(f"Session platform must use canonical id: {canonical}")
         if not SESSION_PART.fullmatch(account_id):
             raise ValueError("Invalid session account_id")
 

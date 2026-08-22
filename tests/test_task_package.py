@@ -67,6 +67,49 @@ class TaskPackageTestCase(unittest.TestCase):
             self.service.import_zip(self.tenant["id"], output.getvalue())
 
 
+    def test_all_required_platforms_are_accepted_and_labels_are_canonicalized(self) -> None:
+        platforms = (
+            "doubao",
+            "yuanbao",
+            "qwen",
+            "deepseek",
+            "kimi",
+            "grok",
+            "gemini",
+            "chatgpt",
+            "perplexity",
+            "千问",
+        )
+        for index, platform in enumerate(platforms, 1):
+            with self.subTest(platform=platform):
+                task = make_task(index)
+                task["platform"] = platform
+                task["idempotency_key"] = f"platform-{index}"
+                package = self.service.import_zip(
+                    self.tenant["id"],
+                    build_task_package(
+                        self.tenant["id"], f"platform-{index}", [task]
+                    ),
+                )
+                expected = "qwen" if platform == "千问" else platform
+                self.assertEqual(package["tasks"][0]["platform"], expected)
+
+    def test_claude_is_explicitly_prohibited_in_task_packages(self) -> None:
+        for index, platform in enumerate(
+            ("claude", "Claude", "claude-3.7-sonnet", "anthropic"), 1
+        ):
+            with self.subTest(platform=platform):
+                task = make_task(index)
+                task["platform"] = platform
+                task["idempotency_key"] = f"prohibited-{index}"
+                with self.assertRaisesRegex(ValueError, "explicitly prohibited"):
+                    self.service.import_zip(
+                        self.tenant["id"],
+                        build_task_package(
+                            self.tenant["id"], f"prohibited-{index}", [task]
+                        ),
+                    )
+
     def test_unsafe_account_id_is_rejected(self) -> None:
         task = make_task(1)
         task["account_id"] = "../../escape"

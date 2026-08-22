@@ -101,7 +101,7 @@ CLIENT_PROFILE.zip包含：
 - Grok
 - Perplexity
 
-Claude不作为当前目标。
+Claude被明确禁止接入。任务包、Session、插件注册和本地控制界面均不得接受 Claude 或 Anthropic 标识，也不得以兼容别名、聚合入口或隐藏开关绕过此限制。
 
 平台必须插件化，根据客户选择启用。
 

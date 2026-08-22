@@ -14,20 +14,10 @@ from geo_operator.core.db import Database
 from geo_operator.core.storage import ArtifactStore
 from geo_operator.core.time import utc_now
 from geo_operator.domain import ApprovalStage
+from geo_operator.platforms import SUPPORTED_PLATFORM_IDS, canonical_platform
 
 SUPPORTED_SCHEMA = "1.0"
-SUPPORTED_PLATFORMS = {
-    "mock",
-    "doubao",
-    "chatgpt",
-    "deepseek",
-    "qwen",
-    "gemini",
-    "yuanbao",
-    "kimi",
-    "grok",
-    "perplexity",
-}
+SUPPORTED_PLATFORMS = set(SUPPORTED_PLATFORM_IDS)
 PACKAGE_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024
 MAX_MEMBER_BYTES = 10 * 1024 * 1024
@@ -241,8 +231,7 @@ class TaskPackageService:
                 raise ValueError(f"Invalid task_id on line {line_number}")
             if task["task_id"] in task_ids:
                 raise ValueError("task_id must be unique within a package")
-            if not isinstance(task["platform"], str) or task["platform"] not in SUPPORTED_PLATFORMS:
-                raise ValueError(f"Unsupported platform: {task['platform']}")
+            task["platform"] = canonical_platform(task["platform"])
             if not isinstance(task["account_id"], str) or not PACKAGE_ID.fullmatch(
                 task["account_id"]
             ):

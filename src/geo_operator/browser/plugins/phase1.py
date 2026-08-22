@@ -42,7 +42,7 @@ class PhaseOneSelectors:
     query_failure_descendants: tuple[str, ...] = ()
 
 
-class ObservedPhaseOnePlugin:
+class ObservedWebChatPlugin:
     phase = 1
     name = ""
     home_url = ""
@@ -444,6 +444,10 @@ class ObservedPhaseOnePlugin:
             "phase": self.phase,
             "observed_at": self.observed_at,
             "complete": self.calibration_complete,
+            "support_status": (
+                "EXECUTION_READY" if self.calibration_complete else "CALIBRATION_REQUIRED"
+            ),
+            "dispatch_eligible": self.calibration_complete,
             "response_capture_complete": self.response_capture_calibration_complete,
             "deletion_complete": self.deletion_calibration_complete,
             "missing": [
@@ -513,7 +517,11 @@ class ObservedPhaseOnePlugin:
         return False
 
 
-class ChatGPTPlugin(ObservedPhaseOnePlugin):
+# Backward-compatible import for existing integrations; new code uses the generic name.
+ObservedPhaseOnePlugin = ObservedWebChatPlugin
+
+
+class ChatGPTPlugin(ObservedWebChatPlugin):
     name = "chatgpt"
     home_url = "https://chatgpt.com/"
     selectors = PhaseOneSelectors(
@@ -543,7 +551,7 @@ class ChatGPTPlugin(ObservedPhaseOnePlugin):
     )
 
 
-class DoubaoPlugin(ObservedPhaseOnePlugin):
+class DoubaoPlugin(ObservedWebChatPlugin):
     name = "doubao"
     home_url = "https://www.doubao.com/chat/"
     conversation_link_selectors = ("a[id^='conversation_'][href*='/chat/']",)

@@ -68,6 +68,26 @@ class ApiWorkflowTestCase(unittest.TestCase):
         self.assertTrue(platforms["doubao"]["complete"])
         self.assertEqual(platforms["chatgpt"]["missing"], [])
         self.assertEqual(platforms["doubao"]["missing"], [])
+        self.assertEqual(
+            set(platforms),
+            {
+                "mock",
+                "doubao",
+                "yuanbao",
+                "qwen",
+                "deepseek",
+                "kimi",
+                "grok",
+                "gemini",
+                "chatgpt",
+                "perplexity",
+            },
+        )
+        pending = set(platforms) - {"mock", "chatgpt", "doubao"}
+        self.assertTrue(
+            all(platforms[platform]["support_status"] == "CALIBRATION_REQUIRED" for platform in pending)
+        )
+        self.assertTrue(all(not platforms[platform]["dispatch_eligible"] for platform in pending))
 
     def test_execution_actions_are_filtered_by_state(self) -> None:
         html = self.client.get("/").text
@@ -78,6 +98,9 @@ class ApiWorkflowTestCase(unittest.TestCase):
         self.assertIn("syncExecutionActions(rows);", html)
         self.assertIn("function syncSessionInterventions(items)", html)
         self.assertIn("HUMAN_TAKEOVER_REQUIRED", html)
+        self.assertIn("平台支持与校准", html)
+        self.assertIn("Claude 明确禁止接入", html)
+        self.assertIn('id="sessionControls"', html)
 
     def test_session_api_rejects_unsafe_identity_before_browser_launch(self) -> None:
         unsafe = self.client.post(
@@ -89,6 +112,16 @@ class ApiWorkflowTestCase(unittest.TestCase):
             },
         )
         self.assertEqual(unsafe.status_code, 422)
+        prohibited = self.client.post(
+            "/api/sessions/open",
+            json={
+                "tenant_id": self.tenant["id"],
+                "platform": "Claude",
+                "account_id": "manual",
+            },
+        )
+        self.assertEqual(prohibited.status_code, 422)
+        self.assertIn("explicitly prohibited", prohibited.json()["detail"])
         unsupported = self.client.post(
             "/api/sessions/calibration-snapshot",
             json={

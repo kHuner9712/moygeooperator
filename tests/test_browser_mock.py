@@ -777,6 +777,54 @@ class BrowserMockTestCase(unittest.TestCase):
         self.assertEqual(self.engine.get(execution["id"])["state"], "PAUSED")
         self.assertFalse(self.loop.run_until_complete(supervisor.run_once()))
 
+    def test_calibration_required_platform_pauses_before_browser_open(self) -> None:
+        token = uuid.uuid4().hex[:10]
+        task = make_task(1)
+        task["task_id"] = f"pending-{token}"
+        task["idempotency_key"] = f"pending-key-{token}"
+        task["account_id"] = f"pending-account-{token}"
+        task["platform"] = "deepseek"
+        package = self.task_packages.import_zip(
+            self.tenant["id"],
+            build_task_package(self.tenant["id"], f"pending-package-{token}", [task]),
+        )
+        self.approvals.decide(package["approval_id"], True, "calibration-gate-test")
+        package = self.task_packages.mark_decision(package["id"], True)
+        execution = self.engine.create(
+            self.tenant["id"],
+            "deepseek",
+            task["account_id"],
+            package["id"],
+            package["tasks"][0]["id"],
+        )
+        supervisor = WorkerSupervisor(
+            self.database,
+            self.sessions,
+            self.engine,
+            ExecutionLeaseManager(self.database, ttl_seconds=10),
+            self.results,
+            PluginRegistry(self.database, f"http://127.0.0.1:{self.port}"),
+            WorkerConfig(headless=True),
+        )
+
+        self.assertTrue(self.loop.run_until_complete(supervisor.run_once()))
+        paused = self.engine.get(execution["id"])
+        self.assertEqual(paused["state"], "PAUSED")
+        self.assertEqual(paused["pause_reason"], "PAGE_ABNORMAL")
+        event = self.database.one(
+            """SELECT payload_json FROM execution_events
+               WHERE execution_id=? AND event_type='EXECUTION_PAUSED'
+               ORDER BY sequence DESC LIMIT 1""",
+            (execution["id"],),
+        )
+        self.assertIn("PLUGIN_CALIBRATION_REQUIRED", event["payload_json"])
+        session = self.database.one(
+            """SELECT id FROM browser_sessions
+               WHERE tenant_id=? AND platform='deepseek' AND account_id=?""",
+            (self.tenant["id"], task["account_id"]),
+        )
+        self.assertIsNone(session)
+
     def test_anomalies_and_delete_failure_pause(self) -> None:
         for mode, expected in (
             ("captcha", "CAPTCHA"),

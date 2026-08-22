@@ -19,7 +19,7 @@ GEO Operator V2 是本地运行的内部 GEO 服务执行工具。它负责多�
 - 本机 FastAPI 控制台：客户、档案、任务、审批、进度、暂停、继续、Session、checkpoint、错误截图和导出
 - Mock AI 故障注入，以及 KZQ 10 问完整验收
 
-Phase 1（ChatGPT + 豆包）已完成真实页面校准。ChatGPT 和豆包均已完成 KZQ 10 问真实串行执行；豆包额外完成图片验证码人工接管、平台未投递证据对账和断点恢复。两个插件遇到 DOM 变化或信号冲突都会 fail closed 暂停。Phase 2/3 平台尚未进入实现范围。
+九个平台已进入统一平台目录、任务校验、Session、插件注册、API 和本地控制台：国内为豆包、元宝、千问、DeepSeek、Kimi，国外为 Grok、Gemini、ChatGPT、Perplexity。Phase 1（ChatGPT + 豆包）已完成真实页面校准和 KZQ 10 问真实串行执行；其余七个平台已具备官方入口登录、独立 persistent Session 与结构快照能力，状态为 `CALIBRATION_REQUIRED`。在回答完成、实时保存和聊天删除选择器经真实账号验证前，API 与 Worker 均禁止调度真实问题。Claude（包括 Claude/Anthropic 常见标识）是明确禁止的平台，不创建插件、不开放 Session，也不接受任务包。
 
 ## 安装
 
@@ -61,11 +61,11 @@ uv run geo-operator-worker
 首次登录时先只启动控制台：
 
 1. 创建或选择客户租户。
-2. 点击“使用系统 Chrome 登录 ChatGPT”或“使用系统 Chrome 登录豆包”。该窗口由本机 Google Chrome 直接启动，没有 Playwright 连接或自动化启动参数。
+2. 在九个平台面板中点击目标平台的“系统 Chrome 登录”。该窗口由本机 Google Chrome 直接启动，没有 Playwright 连接或自动化启动参数。
 3. 手工登录并处理验证码/安全验证；登录成功后关闭这个系统 Chrome 窗口，使 persistent profile 完整落盘。
 4. 点击“检测登录/结构”。系统会用同一 profile 启动系统 Chrome channel；快照只返回可见 DOM 的标签和属性，不读取页面文本、Cookie、本地存储或截图。
 5. 点击“关闭校准 Chrome 并释放”。浏览器关闭，独立 Worker 才能取得该 profile。
-6. 再启动 `uv run geo-operator-worker`。不要让人工登录窗口、校准窗口与 Worker 同时占用同一 Session profile。
+6. 若使用一键启动器，Worker 已由启动器统一管理；不要让人工登录窗口、校准窗口与 Worker 同时占用同一 Session profile。
 
 运行中若 Worker 因验证码、登录失效、安全验证或页面异常暂停，直接在 Worker 打开的可见浏览器中人工处理；随后在控制台点击 `Continue`。Worker 会先复核页面，安全后才从保存的 `resume_state` 继续。
 
@@ -82,7 +82,7 @@ uv run python scripts/create_kzq_test_package.py `
   --output KZQ_GEO_TASK_PACKAGE.zip
 ```
 
-真实平台把 `--platform` 改为 `chatgpt` 或 `doubao`。导入后必须先批准客户档案，再批准 `TASK_EXECUTION`。所有任务完成后申请并批准 `RESULT_EXPORT`，才能导出 `RESULT_PACKAGE.zip`。
+`--platform` 接受九个平台的规范 ID；当前只有 `chatgpt` 和 `doubao` 为 `EXECUTION_READY`，其余平台导入任务后仍会被校准门禁阻止真实调度。导入后必须先批准客户档案，再批准 `TASK_EXECUTION`。所有任务完成后申请并批准 `RESULT_EXPORT`，才能导出 `RESULT_PACKAGE.zip`。
 
 ## 验证
 
@@ -103,4 +103,4 @@ uv run pytest -q
 
 ## 真实平台上线前校准
 
-真实 ChatGPT/豆包选择器只来自已观察的真实页面和官方前端资源。豆包虚拟列表不使用消息总数判定关联，而是校验末条助手回答在末条用户问题之后。任何无法唯一识别、信号冲突、登录失效或安全验证都会进入 `PAUSED`，禁止自动绕过。
+所有平台选择器只能来自已观察的真实页面和官方前端资源。平台状态分为 `EXECUTION_READY` 与 `CALIBRATION_REQUIRED`；后者可人工登录和采集不含正文、Cookie、存储数据的结构快照，但禁止 Worker 发送问题。豆包虚拟列表不使用消息总数判定关联，而是校验末条助手回答在末条用户问题之后。任何无法唯一识别、信号冲突、登录失效或安全验证都会进入 `PAUSED`，禁止自动绕过。明确禁止 Claude：不得新增 Claude/Anthropic 插件、Session 入口、任务平台或兼容别名。

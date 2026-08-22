@@ -7,6 +7,8 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+from geo_operator.platforms import SUPPORTED_PLATFORM_IDS
+
 DEFAULT_QUESTIONS = [
     "请介绍 KZQ 品牌及其主要业务。",
     "KZQ 的核心产品或服务是什么？",
@@ -24,7 +26,7 @@ DEFAULT_QUESTIONS = [
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tenant-id", required=True)
-    parser.add_argument("--platform", choices=("mock", "chatgpt", "doubao"), default="mock")
+    parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORM_IDS), default="mock")
     parser.add_argument("--account-id", default="manual")
     parser.add_argument("--package-id", default="kzq-round-1")
     parser.add_argument("--questions", type=Path)
