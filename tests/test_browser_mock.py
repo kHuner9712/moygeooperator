@@ -792,7 +792,7 @@ class BrowserMockTestCase(unittest.TestCase):
         task["task_id"] = f"pending-{token}"
         task["idempotency_key"] = f"pending-key-{token}"
         task["account_id"] = f"pending-account-{token}"
-        task["platform"] = "deepseek"
+        task["platform"] = "qwen"
         package = self.task_packages.import_zip(
             self.tenant["id"],
             build_task_package(self.tenant["id"], f"pending-package-{token}", [task]),
@@ -801,7 +801,7 @@ class BrowserMockTestCase(unittest.TestCase):
         package = self.task_packages.mark_decision(package["id"], True)
         execution = self.engine.create(
             self.tenant["id"],
-            "deepseek",
+            "qwen",
             task["account_id"],
             package["id"],
             package["tasks"][0]["id"],
