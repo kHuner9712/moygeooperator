@@ -38,8 +38,7 @@ class PlatformPolicyTestCase(unittest.TestCase):
 
     def test_qwen_uses_current_mainland_official_origin(self) -> None:
         qwen = next(
-            definition for definition in PLATFORM_DEFINITIONS
-            if definition.platform == "qwen"
+            definition for definition in PLATFORM_DEFINITIONS if definition.platform == "qwen"
         )
         self.assertEqual(qwen.home_url, "https://www.qianwen.com/")
         plugin = live_plugin("qwen")
@@ -62,17 +61,11 @@ class PlatformPolicyTestCase(unittest.TestCase):
         self.assertTrue(plugin.is_home_url("https://yuanbao.tencent.com/chat/"))
         self.assertTrue(plugin.is_home_url("https://yuanbao.tencent.com/chat/naQivTmsDa"))
         self.assertTrue(
-            plugin.is_conversation_url(
-                "https://yuanbao.tencent.com/chat/naQivTmsDa/0PpICk4R0gi"
-            )
+            plugin.is_conversation_url("https://yuanbao.tencent.com/chat/naQivTmsDa/0PpICk4R0gi")
         )
+        self.assertFalse(plugin.is_conversation_url("https://yuanbao.tencent.com/chat/naQivTmsDa"))
         self.assertFalse(
-            plugin.is_conversation_url("https://yuanbao.tencent.com/chat/naQivTmsDa")
-        )
-        self.assertFalse(
-            plugin.is_conversation_url(
-                "https://example.com/chat/naQivTmsDa/0PpICk4R0gi"
-            )
+            plugin.is_conversation_url("https://example.com/chat/naQivTmsDa/0PpICk4R0gi")
         )
         status = plugin.calibration_status()
         self.assertEqual(status["support_status"], "EXECUTION_READY")
@@ -129,8 +122,16 @@ class PlatformPolicyTestCase(unittest.TestCase):
         self.assertTrue(plugins["yuanbao"].calibration_complete)
         self.assertTrue(plugins["kimi"].calibration_complete)
         self.assertTrue(plugins["grok"].calibration_complete)
+        self.assertTrue(plugins["perplexity"].calibration_complete)
         for platform in EXPECTED_PLATFORMS - {
-            "chatgpt", "doubao", "deepseek", "gemini", "yuanbao", "kimi", "grok"
+            "chatgpt",
+            "doubao",
+            "deepseek",
+            "gemini",
+            "yuanbao",
+            "kimi",
+            "grok",
+            "perplexity",
         }:
             with self.subTest(platform=platform):
                 plugin = live_plugin(platform)

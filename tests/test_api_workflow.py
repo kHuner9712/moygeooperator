@@ -73,11 +73,13 @@ class ApiWorkflowTestCase(unittest.TestCase):
         self.assertTrue(platforms["yuanbao"]["complete"])
         self.assertTrue(platforms["kimi"]["complete"])
         self.assertTrue(platforms["grok"]["complete"])
+        self.assertTrue(platforms["perplexity"]["complete"])
         self.assertEqual(platforms["deepseek"]["missing"], [])
         self.assertEqual(platforms["gemini"]["missing"], [])
         self.assertEqual(platforms["yuanbao"]["missing"], [])
         self.assertEqual(platforms["kimi"]["missing"], [])
         self.assertEqual(platforms["grok"]["missing"], [])
+        self.assertEqual(platforms["perplexity"]["missing"], [])
         self.assertEqual(
             set(platforms),
             {
@@ -94,10 +96,21 @@ class ApiWorkflowTestCase(unittest.TestCase):
             },
         )
         pending = set(platforms) - {
-            "mock", "chatgpt", "doubao", "deepseek", "gemini", "yuanbao", "kimi", "grok"
+            "mock",
+            "chatgpt",
+            "doubao",
+            "deepseek",
+            "gemini",
+            "yuanbao",
+            "kimi",
+            "grok",
+            "perplexity",
         }
         self.assertTrue(
-            all(platforms[platform]["support_status"] == "CALIBRATION_REQUIRED" for platform in pending)
+            all(
+                platforms[platform]["support_status"] == "CALIBRATION_REQUIRED"
+                for platform in pending
+            )
         )
         self.assertTrue(all(not platforms[platform]["dispatch_eligible"] for platform in pending))
 

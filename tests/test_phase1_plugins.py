@@ -6,6 +6,7 @@ from geo_operator.browser.plugins.additional import (
     DeepSeekPlugin,
     GeminiPlugin,
     GrokPlugin,
+    PerplexityPlugin,
     QwenPlugin,
 )
 from geo_operator.browser.plugins.base import SideEffectNotAttempted
@@ -171,11 +172,27 @@ class PhaseOnePluginContractTestCase(unittest.TestCase):
             plugin.selectors.stop_controls,
         )
         self.assertTrue(
-            plugin.is_conversation_url(
-                "https://grok.com/c/5c751a73-3a44-409c-b2ce-23f287d504fb"
-            )
+            plugin.is_conversation_url("https://grok.com/c/5c751a73-3a44-409c-b2ce-23f287d504fb")
         )
         self.assertFalse(plugin.is_conversation_url("https://grok.com/c/not-a-chat"))
+
+    def test_perplexity_real_calibration_contract_is_complete(self) -> None:
+        plugin = PerplexityPlugin()
+        self.assertTrue(plugin.response_capture_calibration_complete)
+        self.assertTrue(plugin.deletion_calibration_complete)
+        self.assertTrue(plugin.calibration_complete)
+        self.assertTrue(plugin.delete_requires_confirmation)
+        self.assertEqual(plugin.calibration_status()["missing"], [])
+        self.assertIn(
+            "button[aria-label='\u505c\u6b62\u54cd\u5e94\uff08Esc\uff09']",
+            plugin.selectors.stop_controls,
+        )
+        self.assertTrue(
+            plugin.is_conversation_url(
+                "https://www.perplexity.ai/search/25966367-f387-452a-9832-645b48dcca38"
+            )
+        )
+        self.assertFalse(plugin.is_conversation_url("https://www.perplexity.ai/search/not-a-chat"))
 
     def test_doubao_normalizes_only_cjk_ascii_boundary_spacing(self) -> None:
         plugin = DoubaoPlugin()

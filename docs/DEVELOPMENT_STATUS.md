@@ -37,7 +37,7 @@
 | 3 | 元宝 | EXECUTION_READY | 已完成真实登录与唯一发送预检；固定精确回答和 01–80 长流式回答均成功，长回答实时保存 27 个 checkpoint；已观察用户/回答、生成、无 id 停止控件和最终完成结构；校准会话删除后 URL 退出、历史项 1→0、校准内容消失且登录态健康 |
 | 3 | Kimi | EXECUTION_READY | 已完成真实登录、唯一发送预检、固定精确回答与 5 次实时 checkpoint；已观察用户/回答、loading 停止控件及最终动作栏；删除目标 UUID 会话后 URL 返回首页、历史项 1→0、目标链接和校准内容消失且登录态健康 |
 | 3 | Grok | EXECUTION_READY | 已完成真实登录、唯一发送预检、固定精确回答与长流式校准；已观察 user-message、assistant-message、“停止模型响应”控件及最终动作栏并实时落盘；UUID 校准会话的“删除”菜单项会即时提交且无二次确认，目标会话已消失，登录首页编辑器健康 |
-| 3 | Perplexity | CALIBRATION_REQUIRED | 已有独立 Session、官方入口、结构采样和 fail-closed 门禁 |
+| 3 | Perplexity | EXECUTION_READY | 已完成真实登录、唯一发送预检、固定精确回答与 1–200 长流式回答；助手回答实时保存 20 个 checkpoint；已观察用户/助手容器、“停止响应（Esc）”控件和最终操作区；删除确认后 URL 返回首页、历史项 1→0、目标链接消失且登录态健康 |
 | 禁止 | Claude / Anthropic | PROHIBITED | 不创建插件、Session 或任务入口 |
 
 `CALIBRATION_REQUIRED` 不是“支持完成”。这些平台在以下证据全部完成前，API 和 Worker 都禁止发送真实问题：
