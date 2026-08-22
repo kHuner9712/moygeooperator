@@ -340,17 +340,145 @@ class YuanbaoPlugin(ObservedWebChatPlugin):
         )
 
 
-class KimiPlugin(CalibrationPendingPlugin):
+class KimiPlugin(ObservedWebChatPlugin):
     phase = 3
     name = "kimi"
+    observed_at = "2026-08-23"
+    deletion_action_verified = True
     home_url = "https://www.kimi.com/"
-    conversation_link_selectors = ("a[href*='/chat/']",)
+    conversation_link_selectors = (
+        ".next-sidebar-history-item__link[href^='/chat/']",
+    )
     conversation_path_prefixes = ("/chat/",)
     selectors = PhaseOneSelectors(
         login_indicators=("button:has-text('登录')", "button:has-text('Log in')"),
-        prompt_inputs=("[contenteditable='true'][role='textbox']", "textarea"),
-        send_controls=(),
+        prompt_inputs=(
+            ".chat-input-editor[role='textbox'][contenteditable='true']",
+        ),
+        send_controls=(".send-button-container:not(.disabled):not(.loading)",),
+        user_queries=(".chat-content-item-user .user-content",),
+        responses=(
+            ".chat-content-item-assistant .segment-content-box > .markdown-container",
+        ),
+        streaming_indicators=(".send-button-container.loading",),
+        stop_controls=(".send-button-container.loading",),
+        conversation_menu_controls=(
+            (
+                ".next-sidebar-history-item.is-active "
+                "button.next-sidebar-history-item__more[aria-label='更多']"
+            ),
+        ),
+        delete_controls=(
+            "button.next-sidebar-history-item__menu-item.is-delete",
+        ),
+        delete_confirm_controls=(
+            ".modal-mask .modal-container .bottom button.km-button-danger:has-text('删除')",
+        ),
+        final_response_descendants=(
+            (
+                "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), "
+                "' segment-content ')][1]//*[contains(concat(' ', normalize-space(@class), "
+                "' '), ' segment-assistant-actions ')]"
+            ),
+        ),
     )
+
+    def is_conversation_url(self, value: str) -> bool:
+        if not super().is_conversation_url(value):
+            return False
+        conversation_id = urlsplit(value).path.removeprefix("/chat/").strip("/")
+        groups = conversation_id.split("-")
+        return [len(group) for group in groups] == [8, 4, 4, 4, 12] and all(
+            character in "0123456789abcdef"
+            for group in groups
+            for character in group.lower()
+        )
+
+    async def _expose_history_item(self, page: object, item: object, path: str) -> None:
+        left = await item.evaluate("node => node.getBoundingClientRect().left")
+        if left < 0:
+            opener = page.locator(
+                ".sidebar-main-trigger__button[aria-label='展开导航']"
+            )
+            if await opener.count() != 1 or not await opener.is_visible():
+                raise PluginPageAbnormal("Kimi sidebar opener is not uniquely visible")
+            await opener.click()
+            try:
+                await page.wait_for_function(
+                    """path => {
+                      const link = document.querySelector(`a[href^="${path}"]`);
+                      return Boolean(link && link.closest('.next-sidebar-history-item')
+                        .getBoundingClientRect().left >= 0);
+                    }""",
+                    arg=path,
+                    timeout=10_000,
+                )
+            except PlaywrightTimeoutError as exc:
+                raise PluginPageAbnormal("Kimi sidebar did not expand") from exc
+        await item.scroll_into_view_if_needed(timeout=10_000)
+
+    async def delete_chat(self, page: object) -> None:
+        if not self.is_conversation_url(page.url):
+            raise PluginPageAbnormal("Kimi delete requires a conversation URL")
+        path = urlsplit(page.url).path
+        self._deleting_conversation_path = path
+        items = page.locator(".next-sidebar-history-item")
+        self._history_count_before_delete = await items.count()
+        item = page.locator(
+            f".next-sidebar-history-item:has(a[href^='{path}'])"
+        )
+        try:
+            await item.wait_for(state="attached", timeout=10_000)
+        except PlaywrightTimeoutError as exc:
+            raise PluginPageAbnormal("Kimi conversation item did not hydrate") from exc
+        if await item.count() != 1:
+            raise PluginPageAbnormal("Kimi conversation item is not unique")
+        await self._expose_history_item(page, item, path)
+        await item.hover()
+        menu = item.locator(
+            "button.next-sidebar-history-item__more[aria-label='更多']"
+        )
+        if await menu.count() != 1 or not await menu.is_visible():
+            raise PluginPageAbnormal("Kimi conversation menu is not uniquely visible")
+        await menu.click()
+        delete = page.locator("button.next-sidebar-history-item__menu-item.is-delete")
+        try:
+            await delete.wait_for(state="visible", timeout=5_000)
+        except PlaywrightTimeoutError as exc:
+            raise PluginPageAbnormal("Kimi delete item did not become visible") from exc
+        if await delete.count() != 1:
+            raise PluginPageAbnormal("Kimi delete item is not unique")
+        await delete.click()
+        confirm = page.locator(
+            ".modal-mask .modal-container .bottom "
+            "button.km-button-danger:has-text('删除')"
+        )
+        try:
+            await confirm.wait_for(state="visible", timeout=5_000)
+        except PlaywrightTimeoutError as exc:
+            raise PluginPageAbnormal("Kimi delete confirmation did not appear") from exc
+        if await confirm.count() != 1:
+            raise PluginPageAbnormal("Kimi delete confirmation is not unique")
+        await confirm.click()
+
+    async def verify_chat_deleted(self, page: object) -> bool:
+        if not await self.detect_login(page):
+            return False
+        path = getattr(self, "_deleting_conversation_path", None)
+        if isinstance(path, str):
+            if urlsplit(page.url).path == path:
+                return False
+            if await page.locator(f"a[href^='{path}']").count():
+                return False
+            before = getattr(self, "_history_count_before_delete", None)
+            if isinstance(before, int):
+                after = await page.locator(".next-sidebar-history-item").count()
+                if after < before:
+                    return True
+            return self.is_home_url(page.url) or self.is_conversation_url(page.url)
+        return self.is_home_url(page.url) and not await self._any_visible(
+            page, self.selectors.user_queries
+        )
 
 
 class GrokPlugin(CalibrationPendingPlugin):

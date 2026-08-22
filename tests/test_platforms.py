@@ -79,6 +79,24 @@ class PlatformPolicyTestCase(unittest.TestCase):
         self.assertTrue(status["dispatch_eligible"])
         self.assertEqual(status["missing"], [])
 
+    def test_kimi_uses_observed_uuid_conversation_url(self) -> None:
+        plugin = live_plugin("kimi")
+        self.assertTrue(
+            plugin.is_conversation_url(
+                "https://www.kimi.com/chat/1a02ae50-c302-8db4-8000-09f2eb88e8dc"
+            )
+        )
+        self.assertFalse(plugin.is_conversation_url("https://www.kimi.com/chat/not-a-chat"))
+        self.assertFalse(
+            plugin.is_conversation_url(
+                "https://example.com/chat/1a02ae50-c302-8db4-8000-09f2eb88e8dc"
+            )
+        )
+        status = plugin.calibration_status()
+        self.assertEqual(status["support_status"], "EXECUTION_READY")
+        self.assertTrue(status["dispatch_eligible"])
+        self.assertEqual(status["missing"], [])
+
     def test_external_labels_are_canonicalized(self) -> None:
         self.assertEqual(canonical_platform("ChatGPT"), "chatgpt")
         self.assertEqual(canonical_platform("豆包"), "doubao")
@@ -109,8 +127,9 @@ class PlatformPolicyTestCase(unittest.TestCase):
         self.assertTrue(plugins["deepseek"].calibration_complete)
         self.assertTrue(plugins["gemini"].calibration_complete)
         self.assertTrue(plugins["yuanbao"].calibration_complete)
+        self.assertTrue(plugins["kimi"].calibration_complete)
         for platform in EXPECTED_PLATFORMS - {
-            "chatgpt", "doubao", "deepseek", "gemini", "yuanbao"
+            "chatgpt", "doubao", "deepseek", "gemini", "yuanbao", "kimi"
         }:
             with self.subTest(platform=platform):
                 plugin = live_plugin(platform)
