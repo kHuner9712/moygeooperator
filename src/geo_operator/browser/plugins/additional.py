@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from geo_operator.browser.plugins.phase1 import ObservedWebChatPlugin, PhaseOneSelectors
+from urllib.parse import urlsplit
+
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+from geo_operator.browser.plugins.phase1 import (
+    ObservedWebChatPlugin,
+    PhaseOneSelectors,
+    PluginPageAbnormal,
+)
 
 
 class CalibrationPendingPlugin(ObservedWebChatPlugin):
@@ -16,17 +24,85 @@ class CalibrationPendingPlugin(ObservedWebChatPlugin):
         return status
 
 
-class DeepSeekPlugin(CalibrationPendingPlugin):
+class DeepSeekPlugin(ObservedWebChatPlugin):
     phase = 2
     name = "deepseek"
+    observed_at = "2026-08-23"
+    deletion_action_verified = True
     home_url = "https://chat.deepseek.com/"
     conversation_link_selectors = ("a[href*='/a/chat/s/']",)
     conversation_path_prefixes = ("/a/chat/s/",)
     selectors = PhaseOneSelectors(
         login_indicators=("button:has-text('登录')", "button:has-text('Log in')"),
         prompt_inputs=("textarea#chat-input", "textarea", "[contenteditable='true']"),
-        send_controls=(),
+        send_controls=(
+            "div.ds-button.ds-button--primary.ds-button--filled.ds-button--circle",
+        ),
+        user_queries=(
+            "div.ds-message:not(:has(.ds-assistant-message-main-content))",
+        ),
+        responses=(".ds-markdown.ds-assistant-message-main-content",),
+        streaming_indicators=(".ds-loading",),
+        stop_controls=(
+            "div.ds-button.ds-button--primary.ds-button--circle:has(.ds-loading)",
+        ),
+        conversation_menu_controls=("a[href*='/a/chat/s/']",),
+        delete_controls=(".ds-dropdown-menu-option--error",),
+        delete_confirm_controls=(
+            ".ds-modal-content[role='dialog'] .ds-button--error.ds-button--filled",
+        ),
     )
+
+    async def delete_chat(self, page: object) -> None:
+        if not self.is_conversation_url(page.url):
+            raise PluginPageAbnormal("DeepSeek delete requires a conversation URL")
+        path = urlsplit(page.url).path
+        self._deleting_conversation_path = path
+        conversation = page.locator(f"a[href='{path}']")
+        try:
+            await conversation.first.wait_for(state="visible", timeout=10_000)
+        except PlaywrightTimeoutError as exc:
+            raise PluginPageAbnormal(
+                "DeepSeek conversation item did not become visible"
+            ) from exc
+        if await conversation.count() != 1:
+            raise PluginPageAbnormal("DeepSeek conversation item is not unique")
+        await conversation.hover()
+        menu_candidates = conversation.locator("xpath=..").locator("div[role='button']")
+        visible_menus = [
+            menu_candidates.nth(index)
+            for index in range(await menu_candidates.count())
+            if await menu_candidates.nth(index).is_visible()
+        ]
+        if len(visible_menus) != 1:
+            raise PluginPageAbnormal("DeepSeek conversation menu is not uniquely visible")
+        await visible_menus[0].click()
+        delete = page.locator(".ds-dropdown-menu-option--error")
+        try:
+            await delete.wait_for(state="visible", timeout=5_000)
+        except PlaywrightTimeoutError as exc:
+            raise PluginPageAbnormal("DeepSeek delete item did not become visible") from exc
+        if await delete.count() != 1:
+            raise PluginPageAbnormal("DeepSeek delete item is not unique")
+        await delete.click()
+        confirm = page.locator(
+            ".ds-modal-content[role='dialog'] .ds-button--error.ds-button--filled"
+        )
+        try:
+            await confirm.wait_for(state="visible", timeout=5_000)
+        except PlaywrightTimeoutError as exc:
+            raise PluginPageAbnormal("DeepSeek delete confirmation did not appear") from exc
+        if await confirm.count() != 1:
+            raise PluginPageAbnormal("DeepSeek delete confirmation is not unique")
+        await confirm.click()
+
+    async def verify_chat_deleted(self, page: object) -> bool:
+        path = getattr(self, "_deleting_conversation_path", None)
+        if not isinstance(path, str) or not path.startswith("/a/chat/s/"):
+            return False
+        if not self.is_home_url(page.url) or not await self.detect_login(page):
+            return False
+        return await page.locator(f"a[href='{path}']").count() == 0
 
 
 class QwenPlugin(CalibrationPendingPlugin):

@@ -9,9 +9,14 @@ import zipfile
 from pathlib import Path
 from urllib.parse import urlparse
 
+import httpx
+from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright
+
 from geo_operator.core.db import Database
 from geo_operator.core.storage import ArtifactStore
 from geo_operator.core.time import utc_now
+from geo_operator.websites import validate_public_url
 
 
 class PublicDiscoveryService:
@@ -58,6 +63,67 @@ class PublicDiscoveryService:
                 ),
             )
         return self.get(evidence_id)
+
+    async def collect_url(
+        self,
+        tenant_id: str,
+        source_url: str,
+        source_type: str,
+        client: httpx.AsyncClient | None = None,
+    ) -> dict[str, object]:
+        if not self.database.one("SELECT id FROM tenants WHERE id=?", (tenant_id,)):
+            raise KeyError("Tenant not found")
+        source_url = validate_public_url(source_url)
+        owns_client = client is None
+        active_client = client or httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=httpx.Timeout(20.0),
+            headers={"User-Agent": "GEO-Operator-V2-Evidence-Collector/1.0"},
+        )
+        try:
+            response = await active_client.get(source_url)
+            for redirect in [*response.history, response]:
+                validate_public_url(str(redirect.url))
+            response.raise_for_status()
+            if len(response.content) > 2 * 1024 * 1024:
+                raise ValueError("Discovery source exceeds the 2 MiB limit")
+            content_type = response.headers.get("content-type", "").lower()
+            if "text/html" not in content_type:
+                raise ValueError("Discovery URL must return an HTML page")
+            soup = BeautifulSoup(response.content, "html.parser")
+            for node in soup(["script", "style", "noscript", "template"]):
+                node.decompose()
+            raw_text = "\n".join(
+                line.strip() for line in soup.get_text("\n").splitlines() if line.strip()
+            )
+            if not raw_text:
+                raise ValueError("Discovery page contains no visible text")
+            for node in soup(["link", "iframe", "object", "embed", "img", "video", "audio"]):
+                node.decompose()
+            for node in soup.select("meta[http-equiv]"):
+                if str(node.get("http-equiv", "")).lower() == "refresh":
+                    node.decompose()
+            screenshot = await self._render_snapshot(str(soup))
+            return self.collect(
+                tenant_id, str(response.url), raw_text, screenshot, source_type
+            )
+        finally:
+            if owns_client:
+                await active_client.aclose()
+
+    @staticmethod
+    async def _render_snapshot(html: str) -> bytes:
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(
+                headless=True, chromium_sandbox=True
+            )
+            try:
+                page = await browser.new_page(viewport={"width": 1440, "height": 1000})
+                await page.route("**/*", lambda route: route.abort())
+                await page.set_content(html, wait_until="domcontentloaded")
+                return await page.screenshot(full_page=True, type="png")
+            finally:
+                await browser.close()
 
     def get(self, evidence_id: str) -> dict[str, object]:
         row = self.database.one("SELECT * FROM discovery_evidence WHERE id=?", (evidence_id,))
@@ -109,10 +175,30 @@ class PublicDiscoveryService:
                     }
                     index.append(json.dumps(record, ensure_ascii=False))
                     files += [
-                        {"path": text_name, "sha256": item["content_sha256"]},
-                        {"path": shot_name, "sha256": item["screenshot_sha256"]},
+                        {
+                            "path": text_name,
+                            "sha256": item["content_sha256"],
+                            "size": self.artifacts.resolve(
+                                tenant_id, str(item["raw_text_path"])
+                            ).stat().st_size,
+                        },
+                        {
+                            "path": shot_name,
+                            "sha256": item["screenshot_sha256"],
+                            "size": self.artifacts.resolve(
+                                tenant_id, str(item["screenshot_path"])
+                            ).stat().st_size,
+                        },
                     ]
-                archive.writestr("evidence/index.jsonl", "\n".join(index) + "\n")
+                index_content = ("\n".join(index) + "\n").encode()
+                archive.writestr("evidence/index.jsonl", index_content)
+                files.append(
+                    {
+                        "path": "evidence/index.jsonl",
+                        "sha256": hashlib.sha256(index_content).hexdigest(),
+                        "size": len(index_content),
+                    }
+                )
                 archive.writestr(
                     "manifest.json",
                     json.dumps(
@@ -136,7 +222,7 @@ class PublicDiscoveryService:
             except FileNotFoundError:
                 pass
             raise
-        package_hash = hashlib.sha256(target.read_bytes()).hexdigest()
+        package_hash = self.artifacts.record_existing(tenant_id, relative)
         with self.database.transaction() as connection:
             connection.execute(
                 """INSERT INTO exports(id,tenant_id,package_type,relative_path,sha256,created_at)

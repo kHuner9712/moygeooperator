@@ -192,6 +192,15 @@ class BrowserMockTestCase(unittest.TestCase):
         output = self.result_packages.export(package["id"])
         with zipfile.ZipFile(output) as archive:
             names = set(archive.namelist())
+            result_record = json.loads(archive.read("results.jsonl").splitlines()[0])
+            manifest = json.loads(archive.read("manifest.json"))
+        self.assertIn("started_at", result_record)
+        self.assertIn("completed_at", result_record)
+        self.assertNotIn("saved_at", result_record)
+        manifest_paths = {item["path"] for item in manifest["files"]}
+        self.assertIn("results.jsonl", manifest_paths)
+        self.assertIn("events/execution_events.jsonl", manifest_paths)
+        self.assertTrue(all("size" in item for item in manifest["files"]))
         self.assertIn("manifest.json", names)
         self.assertIn("results.jsonl", names)
         self.assertIn("events/execution_events.jsonl", names)

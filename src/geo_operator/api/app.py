@@ -3,10 +3,11 @@ from __future__ import annotations
 import base64
 import json
 import sqlite3
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
@@ -24,6 +25,7 @@ from geo_operator.browser.session import (
 from geo_operator.core.config import Settings
 from geo_operator.core.db import Database
 from geo_operator.core.storage import ArtifactStore
+from geo_operator.core.time import utc_now
 from geo_operator.discovery import PublicDiscoveryService
 from geo_operator.domain import PauseReason
 from geo_operator.exports import ResultPackageService
@@ -31,8 +33,10 @@ from geo_operator.mock_platform import router as mock_router
 from geo_operator.platforms import platform_definition
 from geo_operator.profiles import ClientProfileService
 from geo_operator.results import ResultService
+from geo_operator.sources import SourceIngestionService
 from geo_operator.tasks import DuplicateTaskPackageError, TaskPackageService
 from geo_operator.tenants import TenantService
+from geo_operator.websites import WebsiteCrawlerService
 
 
 class TenantCreate(BaseModel):
@@ -54,6 +58,18 @@ class ApprovalDecision(BaseModel):
 
 class ProfileCreate(BaseModel):
     profile: dict[str, Any]
+    source_asset_ids: list[str] | None = None
+    website_page_ids: list[str] | None = None
+
+
+class WebsiteCrawlRequest(BaseModel):
+    start_url: str
+    max_pages: int = Field(default=20, ge=1, le=50)
+
+
+class DiscoveryURLRequest(BaseModel):
+    source_url: str
+    source_type: str = Field(min_length=1, max_length=100)
 
 
 class ResumeRequest(BaseModel):
@@ -68,6 +84,8 @@ class SessionOpen(BaseModel):
 
 class CalibrationSnapshotRequest(SessionOpen):
     target_url: str | None = None
+    stage: str = Field(default="HOME_STRUCTURE", min_length=1, max_length=100)
+    preserve_current_page: bool = False
     inspect_conversation_menu: bool = False
     inspect_delete_confirmation: bool = False
     execution_id: str | None = None
@@ -77,11 +95,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     database = Database(settings.database_path)
     database.initialize()
-    artifacts = ArtifactStore(settings.data_root)
+    artifacts = ArtifactStore(settings.data_root, database)
     tenants = TenantService(database, artifacts)
     approvals = ApprovalService(database)
     discovery = PublicDiscoveryService(database, artifacts)
     profiles = ClientProfileService(database, artifacts)
+    sources = SourceIngestionService(database, artifacts)
+    websites = WebsiteCrawlerService(database, artifacts)
     task_packages = TaskPackageService(database, artifacts)
     engine = ExecutionStateMachine(database)
     leases = ExecutionLeaseManager(database)
@@ -90,7 +110,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     results = ResultService(database, artifacts)
     result_packages = ResultPackageService(database, artifacts, approvals)
 
-    app = FastAPI(title="GEO Operator V2", version="0.2.0")
+    app = FastAPI(title="GEO Operator V2", version="0.3.0")
     app.include_router(mock_router)
     app.state.services = {
         "database": database,
@@ -99,6 +119,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "approvals": approvals,
         "discovery": discovery,
         "profiles": profiles,
+        "sources": sources,
+        "websites": websites,
         "task_packages": task_packages,
         "engine": engine,
         "leases": leases,
@@ -210,10 +232,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Client profile not found")
         return profile
 
+    @app.post("/api/tenants/{tenant_id}/profile/build", status_code=201)
+    def build_profile(tenant_id: str) -> dict[str, Any]:
+        try:
+            return profiles.build_draft(tenant_id)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @app.post("/api/tenants/{tenant_id}/profile", status_code=201)
     def save_profile(tenant_id: str, body: ProfileCreate) -> dict[str, Any]:
         try:
-            return profiles.save_draft(tenant_id, body.profile)
+            return profiles.save_draft(
+                tenant_id, body.profile, body.source_asset_ids, body.website_page_ids
+            )
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -224,6 +255,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return FileResponse(path, filename="CLIENT_PROFILE.zip")
         except (KeyError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+    @app.post("/api/tenants/{tenant_id}/sources", status_code=201)
+    async def upload_source(tenant_id: str, request: Request) -> dict[str, Any]:
+        try:
+            filename = unquote(request.headers.get("x-filename", ""))
+            return sources.ingest(
+                tenant_id, filename, await request.body(), request.headers.get("content-type")
+            )
+        except (KeyError, UnicodeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/tenants/{tenant_id}/sources")
+    def list_sources(tenant_id: str) -> list[dict[str, Any]]:
+        try:
+            require_tenant(tenant_id)
+            return sources.list(tenant_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/tenants/{tenant_id}/website-crawls", status_code=201)
+    async def crawl_website(
+        tenant_id: str, body: WebsiteCrawlRequest
+    ) -> dict[str, Any]:
+        try:
+            return await websites.crawl(tenant_id, body.start_url, body.max_pages)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/tenants/{tenant_id}/website-pages")
+    def list_website_pages(
+        tenant_id: str, crawl_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        try:
+            require_tenant(tenant_id)
+            return websites.list(tenant_id, crawl_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/api/tenants/{tenant_id}/task-packages", status_code=201)
     async def import_task_package(tenant_id: str, request: Request) -> dict[str, Any]:
@@ -368,6 +437,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             require_tenant(body.tenant_id)
             plugin = live_plugin(body.platform)
             target_url = body.target_url
+            if target_url and body.preserve_current_page:
+                raise ValueError("target_url and preserve_current_page cannot be combined")
             if target_url:
                 target = urlsplit(target_url)
                 home = urlsplit(plugin.home_url)
@@ -383,7 +454,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 body.tenant_id, body.platform, body.account_id, headless=False
             )
             page = context.pages[-1] if context.pages else await context.new_page()
-            if target_url:
+            if body.preserve_current_page:
+                hydration = "PRESERVED_CURRENT_PAGE"
+            elif target_url:
                 await page.goto(target_url, wait_until="domcontentloaded")
                 hydration = await plugin.wait_for_calibration_hydration(page)
             else:
@@ -484,7 +557,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 recovery_bound = True
             elements = await plugin.structural_snapshot(page)
             origin = await page.evaluate("location.origin")
+            calibration_id = uuid.uuid4().hex
+            relative = f"calibration/{body.platform}/{calibration_id}.json"
+            privacy = "STRUCTURE_ONLY_NO_TEXT_NO_STORAGE_NO_COOKIES"
+            snapshot = {
+                "calibration_id": calibration_id,
+                "platform": body.platform,
+                "account_id": body.account_id,
+                "stage": body.stage,
+                "url": page.url,
+                "origin": origin,
+                "hydration": hydration,
+                "elements": elements,
+                "privacy": privacy,
+                "captured_at": utc_now(),
+            }
+            artifacts.atomic_write(
+                body.tenant_id, relative,
+                json.dumps(snapshot, ensure_ascii=False, indent=2).encode(),
+            )
+            with database.transaction() as connection:
+                connection.execute(
+                    """INSERT INTO platform_calibrations(
+                       id,tenant_id,platform,account_id,stage,page_url,origin,
+                       relative_path,privacy,created_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        calibration_id, body.tenant_id, body.platform, body.account_id,
+                        body.stage, page.url, origin, relative, privacy, utc_now(),
+                    ),
+                )
             return {
+                "calibration_id": calibration_id,
+                "calibration_path": relative,
                 "platform": body.platform,
                 "account_id": body.account_id,
                 "logged_in": logged_in,
@@ -494,7 +599,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "menu_inspection": menu_inspection,
                 "delete_confirmation_inspection": delete_confirmation_inspection,
                 "recovery_bound": recovery_bound,
-                "privacy": "STRUCTURE_ONLY_NO_TEXT_NO_STORAGE_NO_COOKIES",
+                "privacy": privacy,
                 "plugin": plugin.calibration_status(),
                 "elements": elements,
             }
@@ -505,6 +610,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=409,
                 detail=f"Calibration snapshot failed closed: {type(exc).__name__}",
             ) from exc
+
+    @app.get("/api/calibrations")
+    def list_calibrations(
+        tenant_id: str | None = None, platform: str | None = None
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[str] = []
+        if tenant_id:
+            clauses.append("tenant_id=?")
+            params.append(tenant_id)
+        if platform:
+            try:
+                platform = live_plugin(platform).name
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            clauses.append("platform=?")
+            params.append(platform)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        return database.all(
+            "SELECT * FROM platform_calibrations" + where + " ORDER BY created_at DESC",
+            tuple(params),
+        )
 
     @app.post("/api/sessions/close")
     async def close_session(body: SessionOpen) -> dict[str, str]:
@@ -558,6 +685,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except (ValueError, KeyError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+    @app.post("/api/tenants/{tenant_id}/discovery/collect-url", status_code=201)
+    async def collect_evidence_url(
+        tenant_id: str, body: DiscoveryURLRequest
+    ) -> dict[str, object]:
+        try:
+            return await discovery.collect_url(
+                tenant_id, body.source_url, body.source_type
+            )
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Public discovery collection failed closed: {type(exc).__name__}",
+            ) from exc
 
     @app.get("/api/tenants/{tenant_id}/discovery")
     def list_evidence(tenant_id: str) -> list[dict[str, object]]:

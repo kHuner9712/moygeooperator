@@ -80,12 +80,14 @@ SQLite 保存：
 
 - tenants
 - source_assets
+- website_pages
 - client_profiles
 - discovery_evidence
 - task_packages
 - tasks
 - approvals
 - browser_sessions
+- platform_calibrations
 - executions
 - execution_events
 - response_checkpoints
@@ -109,11 +111,15 @@ SQLite 保存：
 ```text
 data/tenants/{tenant_id}/
 ├── source/
+│   └── extracted/
+├── website/
+│   └── text/
 ├── profile/
 ├── discovery/
 │   ├── text/
 │   └── screenshots/
 ├── tasks/
+├── calibration/
 ├── results/
 │   ├── checkpoints/
 │   └── screenshots/

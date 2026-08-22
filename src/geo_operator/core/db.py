@@ -27,6 +27,29 @@ CREATE TABLE IF NOT EXISTS discovery_evidence (
  collection_status TEXT NOT NULL, collection_error TEXT, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_tenant ON discovery_evidence(tenant_id,captured_at);
+CREATE TABLE IF NOT EXISTS source_assets (
+ id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
+ original_name TEXT NOT NULL, media_type TEXT NOT NULL, relative_path TEXT NOT NULL,
+ extracted_text_path TEXT, content_sha256 TEXT NOT NULL, size INTEGER NOT NULL,
+ extraction_status TEXT NOT NULL, metadata_json TEXT NOT NULL DEFAULT '{}',
+ created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_source_assets_tenant ON source_assets(tenant_id,created_at);
+CREATE TABLE IF NOT EXISTS website_pages (
+ id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
+ crawl_id TEXT NOT NULL, source_url TEXT NOT NULL, final_url TEXT,
+ title TEXT, text_path TEXT, content_sha256 TEXT,
+ status TEXT NOT NULL, error TEXT, captured_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_website_pages_tenant ON website_pages(tenant_id,captured_at);
+CREATE TABLE IF NOT EXISTS platform_calibrations (
+ id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
+ platform TEXT NOT NULL, account_id TEXT NOT NULL, stage TEXT NOT NULL,
+ page_url TEXT NOT NULL, origin TEXT NOT NULL, relative_path TEXT NOT NULL,
+ privacy TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_platform_calibrations
+ ON platform_calibrations(tenant_id,platform,account_id,created_at);
 CREATE TABLE IF NOT EXISTS executions (
  id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
  task_package_id TEXT, platform TEXT NOT NULL, account_id TEXT NOT NULL,
@@ -61,6 +84,13 @@ CREATE TABLE IF NOT EXISTS results (
  tenant_id TEXT NOT NULL REFERENCES tenants(id), relative_path TEXT NOT NULL,
  content_sha256 TEXT NOT NULL, completion_signals_json TEXT NOT NULL, saved_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS artifacts (
+ id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
+ artifact_type TEXT NOT NULL, relative_path TEXT NOT NULL,
+ sha256 TEXT NOT NULL, size INTEGER NOT NULL, media_type TEXT NOT NULL,
+ created_at TEXT NOT NULL, UNIQUE(tenant_id,relative_path)
+);
+CREATE INDEX IF NOT EXISTS idx_artifacts_tenant ON artifacts(tenant_id,created_at);
 CREATE TABLE IF NOT EXISTS exports (
  id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
  package_type TEXT NOT NULL, relative_path TEXT NOT NULL, sha256 TEXT NOT NULL,
@@ -69,6 +99,8 @@ CREATE TABLE IF NOT EXISTS exports (
 CREATE TABLE IF NOT EXISTS client_profiles (
  id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id),
  profile_json TEXT NOT NULL, status TEXT NOT NULL, approval_id TEXT NOT NULL,
+ source_asset_ids_json TEXT NOT NULL DEFAULT '[]',
+ website_page_ids_json TEXT NOT NULL DEFAULT '[]',
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_client_profiles_tenant
@@ -131,6 +163,14 @@ class Database:
             self._ensure_column(connection, "results", "screenshot_path", "TEXT")
             self._ensure_column(
                 connection, "results", "metadata_json", "TEXT NOT NULL DEFAULT '{}'"
+            )
+            self._ensure_column(
+                connection, "client_profiles", "source_asset_ids_json",
+                "TEXT NOT NULL DEFAULT '[]'",
+            )
+            self._ensure_column(
+                connection, "client_profiles", "website_page_ids_json",
+                "TEXT NOT NULL DEFAULT '[]'",
             )
             connection.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_execution_task "

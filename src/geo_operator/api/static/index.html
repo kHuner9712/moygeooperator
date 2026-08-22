@@ -37,7 +37,22 @@ button.secondary{background:#e8edf3;color:#26384c}.row{display:flex;gap:8px;alig
  <div><label class="muted">导入 GEO_TASK_PACKAGE.zip</label><div class="row"><input id="taskFile" type="file" accept=".zip"><button onclick="importTasks()">导入</button></div></div>
 </section>
 <div class="grid">
- <section class="card full"><h2>客户档案</h2><textarea id="profileJson" style="width:100%;min-height:100px" placeholder='{"name":"KZQ","website":"","notes":""}'></textarea><div class="actions"><button onclick="loadProfile()">查看客户资料</button><button class="good" onclick="saveProfile()">保存草稿并提交审批</button><button class="secondary" onclick="exportProfile()">导出 CLIENT_PROFILE.zip</button></div><div id="profileStatus" class="muted"></div></section>
+ <section class="card"><h2>客户资料导入</h2>
+  <div class="muted" style="margin-bottom:8px">支持 TXT/Markdown/CSV/JSON、PDF、Word、Excel 和常见图片；原文件与机械提取文本分开保存。</div>
+  <div class="row"><input id="sourceFile" type="file" accept=".txt,.md,.csv,.json,.pdf,.docx,.xlsx,.xlsm,.png,.jpg,.jpeg,.webp,.gif"><button onclick="uploadSource()">上传</button></div>
+  <div id="sources" class="list" style="margin-top:12px"></div>
+ </section>
+ <section class="card"><h2>官网资料抓取</h2>
+  <div class="row"><input id="websiteUrl" placeholder="https://客户官网/"><input id="websiteMax" type="number" min="1" max="50" value="20" style="max-width:90px"><button onclick="crawlWebsite()">抓取</button></div>
+  <div class="muted" style="margin-top:8px">只抓取公网、同源 HTML 页面；默认最多 20 页。</div>
+  <div id="websitePages" class="list" style="margin-top:12px"></div>
+ </section>
+ <section class="card full"><h2>Public Discovery 原始证据</h2>
+  <div class="row"><input id="discoveryUrl" placeholder="https://公开来源页面/"><input id="discoveryType" value="PUBLIC_WEB" placeholder="来源类型"><button onclick="collectDiscovery()">采集 URL</button><button class="secondary" onclick="exportDiscovery()">导出 PUBLIC_DISCOVERY.zip</button></div>
+  <div class="muted" style="margin-top:8px">保存来源 URL、抓取时间、可见原始文本、截图和来源类型；可信度固定为 AI_PENDING，不自动写入客户档案。</div>
+  <div id="discovery" class="list" style="margin-top:12px"></div>
+ </section>
+ <section class="card full"><h2>客户档案</h2><textarea id="profileJson" style="width:100%;min-height:100px" placeholder='{"name":"KZQ","website":"","notes":""}'></textarea><div class="actions"><button onclick="loadProfile()">查看客户资料</button><button onclick="buildProfile()">从资料自动整理并提交</button><button class="good" onclick="saveProfile()">保存草稿并提交审批</button><button class="secondary" onclick="exportProfile()">导出 CLIENT_PROFILE.zip</button></div><div id="profileStatus" class="muted"></div></section>
  <section class="card"><h2>人工审批</h2><div id="approvals" class="list"></div></section>
  <section class="card"><h2>平台支持与校准</h2><div class="muted" style="margin-bottom:8px">允许九个平台；Claude 明确禁止接入。CALIBRATION_REQUIRED 平台只允许登录与结构采样，不会调度真实问题。</div><div id="platforms" class="list"></div></section>
  <section class="card"><h2>浏览器 Session</h2>
@@ -70,6 +85,7 @@ async function refresh(){
   const data=await Promise.all([api('/api/tenants'),api('/api/approvals'),api('/api/executions'),api('/api/task-packages'),api('/api/sessions'),api('/api/platforms')]);
   renderTenants(data[0]);renderApprovals(data[1]);renderExecutions(data[2]);renderPackages(data[3]);renderSessions(data[4]);renderPlatforms(data[5]);
   syncSessionInterventions(data[4]);
+  await refreshTenantData();
  }catch(error){notify(error.message,true)}
 }
 function renderTenants(items){
@@ -78,6 +94,18 @@ function renderTenants(items){
  if(items.some(x=>x.id===old))select.value=old;
  select.onchange=()=>{localStorage.setItem('geoTenant',select.value);refresh()};
 }
+async function refreshTenantData(){
+ if(!tenantId()){renderSources([]);renderWebsitePages([]);renderDiscovery([]);return}
+ const data=await Promise.all([
+  api('/api/tenants/'+tenantId()+'/sources'),
+  api('/api/tenants/'+tenantId()+'/website-pages'),
+  api('/api/tenants/'+tenantId()+'/discovery')
+ ]);
+ renderSources(data[0]);renderWebsitePages(data[1]);renderDiscovery(data[2]);
+}
+function renderSources(items){byId('sources').innerHTML=items.length?items.map(x=>'<div class="item"><b>'+esc(x.original_name)+'</b><span class="state">'+esc(x.extraction_status)+'</span><div class="muted">'+esc(x.media_type)+' · '+esc(x.size)+' bytes · '+esc(x.created_at)+'</div></div>').join(''):empty('尚未导入客户资料')}
+function renderWebsitePages(items){byId('websitePages').innerHTML=items.length?items.slice(-10).reverse().map(x=>'<div class="item"><b>'+esc(x.title||x.source_url)+'</b><span class="state '+(x.status==='COLLECTED'?'COMPLETED':'FAILED')+'">'+esc(x.status)+'</span><div class="muted">'+esc(x.final_url||x.source_url)+'</div>'+(x.error?'<div class="muted">'+esc(x.error)+'</div>':'')+'</div>').join(''):empty('尚未抓取官网资料')}
+function renderDiscovery(items){byId('discovery').innerHTML=items.length?items.slice(-10).reverse().map(x=>'<div class="item"><b>'+esc(x.source_type)+'</b><span class="state">'+esc(x.credibility_status)+'</span><div class="muted">'+esc(x.source_url)+' · '+esc(x.captured_at)+'</div></div>').join(''):empty('尚无公网发现证据')}
 function renderApprovals(items){
  const visible=items.filter(x=>x.status==='PENDING'&&(!tenantId()||x.tenant_id===tenantId()));
  byId('approvals').innerHTML=visible.length?visible.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.stage)+'</b><span class="state">'+esc(x.status)+'</span></div><div class="muted">'+esc(x.resource_type)+' · '+esc(x.resource_id)+'</div><div class="actions"><button class="good" onclick="decide(\''+x.id+'\',true)">批准</button><button class="danger" onclick="decide(\''+x.id+'\',false)">拒绝</button></div></div>').join(''):empty('没有待审批项目');
@@ -124,9 +152,15 @@ function renderPlatforms(items){
  byId('platforms').innerHTML=rows.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.label)+' <span class="muted">('+esc(x.platform)+')</span></b><span class="state '+(x.complete?'COMPLETED':'PAUSED')+'">'+esc(x.support_status)+'</span></div><div class="muted">Phase '+esc(x.phase)+' · '+(x.region==='CN'?'国内':'国外')+' · '+esc(x.home_url)+'</div><div class="muted">已观察：'+esc(x.observed_at||'尚未完成登录后 DOM 校准')+'</div><div class="muted">待校准：'+esc((x.missing||[]).join(', ')||'无')+'</div></div>').join('');
  byId('sessionControls').innerHTML=rows.map(x=>'<div class="item"><div class="item-head"><b>'+esc(x.label)+'</b><span class="state '+(x.complete?'COMPLETED':'PAUSED')+'">'+esc(x.support_status)+'</span></div><div class="actions"><button onclick="openSession(\''+esc(x.platform)+'\')">系统 Chrome 登录</button><button class="secondary" onclick="checkCalibration(\''+esc(x.platform)+'\')">检测登录/结构</button><button class="good" onclick="releaseSession(\''+esc(x.platform)+'\')">关闭并释放</button></div></div>').join('');
 }
+async function uploadSource(){try{const file=byId('sourceFile').files[0];if(!file||!tenantId())throw Error('请选择客户和资料文件');await api('/api/tenants/'+tenantId()+'/sources',{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream','X-Filename':encodeURIComponent(file.name)},body:await file.arrayBuffer()});byId('sourceFile').value='';notify('客户资料已保存并完成机械提取');await refreshTenantData()}catch(e){notify(e.message,true)}}
+async function crawlWebsite(){try{if(!tenantId())throw Error('请选择客户');notify('官网抓取进行中');const result=await api('/api/tenants/'+tenantId()+'/website-crawls',{method:'POST',body:JSON.stringify({start_url:byId('websiteUrl').value,max_pages:Number(byId('websiteMax').value||20)})});notify('官网抓取完成：'+result.collected+' 成功，'+result.failed+' 失败');await refreshTenantData()}catch(e){notify(e.message,true)}}
+async function collectDiscovery(){try{if(!tenantId())throw Error('请选择客户');notify('公网证据采集中');await api('/api/tenants/'+tenantId()+'/discovery/collect-url',{method:'POST',body:JSON.stringify({source_url:byId('discoveryUrl').value,source_type:byId('discoveryType').value})});notify('原始证据、文本与截图已保存');await refreshTenantData()}catch(e){notify(e.message,true)}}
+async function exportDiscovery(){try{const r=await api('/api/tenants/'+tenantId()+'/discovery/export',{method:'POST'});downloadResponse(r,'PUBLIC_DISCOVERY.zip')}catch(e){notify(e.message,true)}}
+function downloadResponse(response,name){response.blob().then(blob=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)})}
 async function createTenant(){try{await api('/api/tenants',{method:'POST',body:JSON.stringify({name:byId('tenantName').value})});byId('tenantName').value='';notify('客户已创建');refresh()}catch(e){notify(e.message,true)}}
 let currentProfileId='';
 async function loadProfile(){try{const profile=await api('/api/tenants/'+tenantId()+'/profile');currentProfileId=profile.id;byId('profileJson').value=JSON.stringify(profile.profile,null,2);byId('profileStatus').textContent=profile.status+' · '+profile.updated_at}catch(e){byId('profileStatus').textContent='尚无客户档案'}}
+async function buildProfile(){try{const saved=await api('/api/tenants/'+tenantId()+'/profile/build',{method:'POST'});currentProfileId=saved.id;byId('profileJson').value=JSON.stringify(saved.profile,null,2);byId('profileStatus').textContent=saved.status;notify('资料已机械整理，未包含 Public Discovery，等待人工审批');refresh()}catch(e){notify(e.message,true)}}
 async function saveProfile(){try{const profile=JSON.parse(byId('profileJson').value);const saved=await api('/api/tenants/'+tenantId()+'/profile',{method:'POST',body:JSON.stringify({profile})});currentProfileId=saved.id;byId('profileStatus').textContent=saved.status;notify('客户档案已保存，等待 CLIENT_PROFILE_REVIEW 审批');refresh()}catch(e){notify(e.message,true)}}
 async function exportProfile(){try{if(!currentProfileId)await loadProfile();const r=await api('/api/profiles/'+currentProfileId+'/export',{method:'POST'});const blob=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CLIENT_PROFILE.zip';a.click();URL.revokeObjectURL(a.href)}catch(e){notify(e.message,true)}}async function importTasks(){try{const file=byId('taskFile').files[0];if(!file||!tenantId())throw Error('请选择客户和 ZIP 文件');await api('/api/tenants/'+tenantId()+'/task-packages',{method:'POST',headers:{'Content-Type':'application/zip'},body:await file.arrayBuffer()});notify('任务包已导入，等待人工审批');refresh()}catch(e){notify(e.message,true)}}
 async function decide(id,approved){const actor=prompt('操作者标识','operator');if(!actor)return;try{await api('/api/approvals/'+id+'/decision',{method:'POST',body:JSON.stringify({approved,actor,note:''})});refresh()}catch(e){notify(e.message,true)}}

@@ -104,6 +104,7 @@ class LeaseTestCase(unittest.TestCase):
     ) -> None:
         chrome_path.return_value = Path("C:/Program Files/Google/Chrome/Application/chrome.exe")
         process = popen.return_value
+        process.pid = 43210
         process.poll.return_value = None
         launcher = ManualLoginLauncher(self.artifacts, self.database)
         launcher.open(self.tenant["id"], "chatgpt", "manual", "https://chatgpt.com/")
@@ -120,6 +121,33 @@ class LeaseTestCase(unittest.TestCase):
             launcher.ensure_closed(self.tenant["id"], "chatgpt", "manual")
         process.poll.return_value = 0
         launcher.ensure_closed(self.tenant["id"], "chatgpt", "manual")
+
+
+    @patch("geo_operator.browser.session.system_chrome_path")
+    @patch("geo_operator.browser.session.subprocess.Popen")
+    def test_manual_login_pid_blocks_profile_after_service_restart(
+        self, popen: object, chrome_path: object
+    ) -> None:
+        chrome_path.return_value = Path("C:/Program Files/Google/Chrome/Application/chrome.exe")
+        process = popen.return_value
+        process.pid = 54321
+        process.poll.return_value = None
+        first = ManualLoginLauncher(self.artifacts, self.database)
+        first.open(self.tenant["id"], "deepseek", "manual", "https://chat.deepseek.com/")
+
+        restarted = ManualLoginLauncher(self.artifacts, self.database)
+        with (
+            patch.object(restarted, "_pid_is_running", return_value=True),
+            self.assertRaisesRegex(ValueError, "Close the manual system Chrome"),
+        ):
+            restarted.ensure_closed(self.tenant["id"], "deepseek", "manual")
+        with patch.object(restarted, "_pid_is_running", return_value=False):
+            restarted.ensure_closed(self.tenant["id"], "deepseek", "manual")
+        pid_path = self.artifacts.resolve(
+            self.tenant["id"], "sessions/deepseek/manual/manual-login.pid"
+        )
+        self.assertFalse(pid_path.exists())
+
 
 
 if __name__ == "__main__":

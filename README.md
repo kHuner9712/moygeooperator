@@ -5,8 +5,11 @@ GEO Operator V2 是本地运行的内部 GEO 服务执行工具。它负责多�
 ## 已实现范围
 
 - Python 3.12、SQLite WAL、外键、租户文件隔离和原子文件写入
-- 客户档案草稿、`CLIENT_PROFILE_REVIEW` 人工审批和 `CLIENT_PROFILE.zip`
-- Public Discovery 原始证据保存：URL、抓取时间、原始文本、截图、来源类型、`AI_PENDING` 可信度字段，以及 `PUBLIC_DISCOVERY.zip`
+- 客户原始资料导入与机械抽取：TXT/Markdown/CSV/JSON、PDF、Word、Excel 和常见图片；保存原文件、提取文本、SHA-256、MIME、大小和元数据
+- 官网安全抓取：只允许公网 HTTP(S)、同源队列、重定向复核、页面数/体积/超时上限，并持久化页面文本与失败原因
+- 客户档案机械整理、`CLIENT_PROFILE_REVIEW` 人工审批和完整 `CLIENT_PROFILE.zip`（结构化档案、官网索引/文本、关联原文件）
+- Public Discovery 自动 URL 采集与手工证据录入：URL、抓取时间、原始文本、离线安全截图、来源类型、`AI_PENDING` 可信度字段，以及 `PUBLIC_DISCOVERY.zip`
+- SQLite `artifacts` 目录登记所有原子写入文件和导出包的路径、SHA-256、大小、MIME 与时间
 - `GEO_TASK_PACKAGE.zip` 安全导入：schema、tenant、SHA-256、ZIP 路径、平台、任务 ID、账号 ID、序号和幂等键校验
 - 持久化 Browser Execution 状态机、外部副作用 intent/confirmed 账本、回答 checkpoint、实时截图和结果原子提交
 - 独立 Browser Worker、执行租约、心跳、过期租约回收、Session 单执行锁、persistent Chromium profile，并显式启用 Chromium sandbox
@@ -16,10 +19,11 @@ GEO Operator V2 是本地运行的内部 GEO 服务执行工具。它负责多�
 - 已校准的平台明确未投递标记会保留原 INTENT 和完整审计链，验证完成后才允许安全重试
 - 同一任务包严格按序执行；前序未 `COMPLETED` 时后序任务不能被领取
 - 回答保存和聊天删除均确认后才允许完成；结果导出前需要 `RESULT_EXPORT` 人工审批
-- 本机 FastAPI 控制台：客户、档案、任务、审批、进度、暂停、继续、Session、checkpoint、错误截图和导出
+- 本机 FastAPI 控制台：客户、资料上传、官网抓取、Public Discovery、机械档案、任务、审批、进度、暂停、继续、Session、checkpoint、错误截图和导出
+- 真实平台校准证据持久化：仅保存可见 DOM 结构属性，不读取正文、Cookie 或浏览器存储；支持人工切换菜单/确认框后继续结构采样
 - Mock AI 故障注入，以及 KZQ 10 问完整验收
 
-九个平台已进入统一平台目录、任务校验、Session、插件注册、API 和本地控制台：国内为豆包、元宝、千问、DeepSeek、Kimi，国外为 Grok、Gemini、ChatGPT、Perplexity。Phase 1（ChatGPT + 豆包）已完成真实页面校准和 KZQ 10 问真实串行执行；其余七个平台已具备官方入口登录、独立 persistent Session 与结构快照能力，状态为 `CALIBRATION_REQUIRED`。在回答完成、实时保存和聊天删除选择器经真实账号验证前，API 与 Worker 均禁止调度真实问题。Claude（包括 Claude/Anthropic 常见标识）是明确禁止的平台，不创建插件、不开放 Session，也不接受任务包。
+九个平台已进入统一平台目录、任务校验、Session、插件注册、API 和本地控制台：国内为豆包、元宝、千问、DeepSeek、Kimi，国外为 Grok、Gemini、ChatGPT、Perplexity。Phase 1（ChatGPT + 豆包）已完成真实页面校准和 KZQ 10 问真实串行执行；DeepSeek 已完成真实登录、固定流式回答保存与校准会话删除验证并进入 `EXECUTION_READY`。其余六个平台已具备官方入口登录、独立 persistent Session 与结构快照能力，状态为 `CALIBRATION_REQUIRED`。在回答完成、实时保存和聊天删除选择器经真实账号验证前，API 与 Worker 均禁止调度真实问题。Claude（包括 Claude/Anthropic 常见标识）是明确禁止的平台，不创建插件、不开放 Session，也不接受任务包。
 
 ## 安装
 
@@ -82,7 +86,7 @@ uv run python scripts/create_kzq_test_package.py `
   --output KZQ_GEO_TASK_PACKAGE.zip
 ```
 
-`--platform` 接受九个平台的规范 ID；当前只有 `chatgpt` 和 `doubao` 为 `EXECUTION_READY`，其余平台导入任务后仍会被校准门禁阻止真实调度。导入后必须先批准客户档案，再批准 `TASK_EXECUTION`。所有任务完成后申请并批准 `RESULT_EXPORT`，才能导出 `RESULT_PACKAGE.zip`。
+`--platform` 接受九个平台的规范 ID；当前 `chatgpt`、`doubao` 和 `deepseek` 为 `EXECUTION_READY`，其余平台导入任务后仍会被校准门禁阻止真实调度。导入后必须先批准客户档案，再批准 `TASK_EXECUTION`。所有任务完成后申请并批准 `RESULT_EXPORT`，才能导出 `RESULT_PACKAGE.zip`。
 
 ## 验证
 
@@ -100,6 +104,7 @@ uv run pytest -q
 - `docs/ARCHITECTURE_DESIGN.md`
 - `docs/PACKAGE_CONTRACTS.md`
 - `docs/BROWSER_EXECUTION_DESIGN.md`
+- `docs/DEVELOPMENT_STATUS.md`
 
 ## 真实平台上线前校准
 

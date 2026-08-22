@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 import os
 import tempfile
+import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+from geo_operator.core.time import utc_now
+
+if TYPE_CHECKING:
+    from geo_operator.core.db import Database
 
 
 class ArtifactStore:
-    def __init__(self, data_root: Path) -> None:
+    def __init__(self, data_root: Path, database: Database | None = None) -> None:
         self.data_root = data_root.resolve()
+        self.database = database
         self.tenants_root = self.data_root / "tenants"
         self.tenants_root.mkdir(parents=True, exist_ok=True)
 
@@ -24,15 +33,9 @@ class ArtifactStore:
     def initialize_tenant(self, tenant_id: str) -> Path:
         root = self.tenant_root(tenant_id)
         for name in (
-            "source",
-            "profile",
-            "discovery/text",
-            "discovery/screenshots",
-            "tasks",
-            "results/checkpoints",
-            "results/screenshots",
-            "exports",
-            "sessions",
+            "source", "source/extracted", "website/text", "profile",
+            "discovery/text", "discovery/screenshots", "tasks",
+            "results/checkpoints", "results/screenshots", "exports", "sessions",
         ):
             (root / name).mkdir(parents=True, exist_ok=True)
         return root
@@ -60,4 +63,32 @@ class ArtifactStore:
             except FileNotFoundError:
                 pass
             raise
-        return target, hashlib.sha256(content).hexdigest()
+        digest = hashlib.sha256(content).hexdigest()
+        self.record(tenant_id, relative_path, digest, len(content))
+        return target, digest
+
+    def record_existing(self, tenant_id: str, relative_path: str) -> str:
+        path = self.resolve(tenant_id, relative_path)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        self.record(tenant_id, relative_path, digest, path.stat().st_size)
+        return digest
+
+    def record(self, tenant_id: str, relative_path: str, digest: str, size: int) -> None:
+        if self.database is None:
+            return
+        artifact_type = relative_path.split("/", 1)[0].upper()
+        media_type = mimetypes.guess_type(relative_path)[0] or "application/octet-stream"
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO artifacts(
+                   id,tenant_id,artifact_type,relative_path,sha256,size,media_type,created_at)
+                   VALUES (?,?,?,?,?,?,?,?)
+                   ON CONFLICT(tenant_id,relative_path) DO UPDATE SET
+                   artifact_type=excluded.artifact_type,sha256=excluded.sha256,
+                   size=excluded.size,media_type=excluded.media_type,
+                   created_at=excluded.created_at""",
+                (
+                    uuid.uuid4().hex, tenant_id, artifact_type, relative_path,
+                    digest, size, media_type, utc_now(),
+                ),
+            )

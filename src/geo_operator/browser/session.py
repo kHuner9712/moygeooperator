@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import os
 import re
 import shutil
@@ -58,6 +59,14 @@ class ManualLoginLauncher:
         profile_relative = f"sessions/{platform}/{account_id}"
         profile = self.artifacts.resolve(tenant_id, profile_relative)
         profile.mkdir(parents=True, exist_ok=True)
+        pid_path = profile / "manual-login.pid"
+        persisted_pid = self._read_pid(pid_path)
+        if persisted_pid is not None and self._pid_is_running(persisted_pid):
+            self._record(
+                tenant_id, platform, account_id, "MANUAL_LOGIN_OPEN", profile_relative
+            )
+            return
+        pid_path.unlink(missing_ok=True)
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
         process = subprocess.Popen(
             [
@@ -76,15 +85,24 @@ class ManualLoginLauncher:
             creationflags=creationflags,
         )
         self._open[key] = process
+        self.artifacts.atomic_write(
+            tenant_id, f"{profile_relative}/manual-login.pid", str(process.pid).encode()
+        )
         self._record(tenant_id, platform, account_id, "MANUAL_LOGIN_OPEN", profile_relative)
 
     def ensure_closed(self, tenant_id: str, platform: str, account_id: str) -> None:
         BrowserSessionManager.validate_identity(platform, account_id)
         key = (tenant_id, platform, account_id)
         process = self._open.get(key)
-        if process and process.poll() is None:
+        profile_relative = f"sessions/{platform}/{account_id}"
+        pid_path = self.artifacts.resolve(tenant_id, f"{profile_relative}/manual-login.pid")
+        persisted_pid = self._read_pid(pid_path)
+        if (process and process.poll() is None) or (
+            persisted_pid is not None and self._pid_is_running(persisted_pid)
+        ):
             raise ValueError("Close the manual system Chrome window before calibration or release")
         self._open.pop(key, None)
+        pid_path.unlink(missing_ok=True)
         self._record(
             tenant_id,
             platform,
@@ -92,6 +110,40 @@ class ManualLoginLauncher:
             "MANUAL_LOGIN_CLOSED",
             f"sessions/{platform}/{account_id}",
         )
+
+    @staticmethod
+    def _read_pid(path: Path) -> int | None:
+        try:
+            value = int(path.read_text(encoding="ascii").strip())
+            return value if value > 0 else None
+        except (FileNotFoundError, OSError, ValueError):
+            return None
+
+    @staticmethod
+    def _pid_is_running(pid: int) -> bool:
+        if os.name == "nt":
+            process_query_limited_information = 0x1000
+            still_active = 259
+            handle = ctypes.windll.kernel32.OpenProcess(
+                process_query_limited_information, False, pid
+            )
+            if not handle:
+                return False
+            try:
+                exit_code = ctypes.c_ulong()
+                return bool(
+                    ctypes.windll.kernel32.GetExitCodeProcess(
+                        handle, ctypes.byref(exit_code)
+                    )
+                    and exit_code.value == still_active
+                )
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+        try:
+            os.kill(pid, 0)
+        except (OSError, ProcessLookupError):
+            return False
+        return True
 
     def _record(
         self, tenant_id: str, platform: str, account_id: str, status: str, profile: str

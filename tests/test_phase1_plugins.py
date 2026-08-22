@@ -2,6 +2,7 @@ import unittest
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
+from geo_operator.browser.plugins.additional import DeepSeekPlugin
 from geo_operator.browser.plugins.base import SideEffectNotAttempted
 from geo_operator.browser.plugins.phase1 import ChatGPTPlugin, DoubaoPlugin
 
@@ -100,6 +101,23 @@ class PhaseOnePluginContractTestCase(unittest.TestCase):
         self.assertIn(
             "text-s-color-alert",
             plugin.selectors.query_failure_descendants[0],
+        )
+
+    def test_deepseek_real_calibration_contract_is_complete(self) -> None:
+        plugin = DeepSeekPlugin()
+        self.assertTrue(plugin.response_capture_calibration_complete)
+        self.assertTrue(plugin.deletion_calibration_complete)
+        self.assertTrue(plugin.calibration_complete)
+        self.assertEqual(plugin.calibration_status()["support_status"], "EXECUTION_READY")
+        self.assertIn(".ds-loading", plugin.selectors.streaming_indicators)
+        self.assertIn(
+            ".ds-markdown.ds-assistant-message-main-content",
+            plugin.selectors.responses,
+        )
+        self.assertTrue(
+            plugin.is_conversation_url(
+                "https://chat.deepseek.com/a/chat/s/887228ab-afab-4239-bc5b-950b23c1c67d"
+            )
         )
 
     def test_doubao_normalizes_only_cjk_ascii_boundary_spacing(self) -> None:
