@@ -109,13 +109,35 @@ class QwenPlugin(CalibrationPendingPlugin):
     phase = 2
     name = "qwen"
     home_url = "https://www.qianwen.com/"
-    conversation_link_selectors = ("a[href*='/c/']",)
-    conversation_path_prefixes = ("/c/",)
+    observed_at = "2026-08-23"
+    conversation_link_selectors = ("a[href*='/chat/']",)
+    conversation_path_prefixes = ("/chat/",)
     selectors = PhaseOneSelectors(
         login_indicators=("button:has-text('Log in')", "button:has-text('登录')"),
         prompt_inputs=("textarea", "[contenteditable='true'][role='textbox']"),
-        send_controls=(),
+        send_controls=("button[class*='size-8'][class*='bg-black-button']",),
+        user_queries=(".message-card-wrap.question .question-text-card",),
+        responses=(".chat-answers-card-wrap .answer-text.md-text-card",),
+        streaming_indicators=(
+            "#qk-markdown-react.qk-markdown:not(.qk-markdown-complete)",
+            ".chat-answers-card-wrap [class*='loading-']",
+        ),
+        error_indicators=(
+            ".answer-text.md-text-card:has-text('系统超时')",
+            ".answer-text.md-text-card:has-text('请稍后重试')",
+        ),
+        final_response_descendants=(
+            "#qk-markdown-react.qk-markdown-complete",
+        ),
     )
+
+    def is_conversation_url(self, value: str) -> bool:
+        if not super().is_conversation_url(value):
+            return False
+        conversation_id = urlsplit(value).path.removeprefix("/chat/").strip("/")
+        return len(conversation_id) == 32 and all(
+            character in "0123456789abcdef" for character in conversation_id.lower()
+        )
 
 
 class GeminiPlugin(CalibrationPendingPlugin):

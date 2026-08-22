@@ -32,7 +32,7 @@
 | 1 | ChatGPT | EXECUTION_READY | 已完成真实 DOM、流式完成和删除验证 |
 | 1 | 豆包 | EXECUTION_READY | 已完成真实 DOM、流式完成和删除验证 |
 | 2 | DeepSeek | EXECUTION_READY | 已完成真实登录、发送意图、流式/最终结构、回答落盘及校准会话删除验证 |
-| 2 | 千问 | CALIBRATION_REQUIRED | 已有独立 Session、官方入口、结构采样和 fail-closed 门禁 |
+| 2 | 千问 | CALIBRATION_REQUIRED | 已完成真实登录、唯一发送控件、用户/回答容器、流式/完成标记与实时保存校准；2026-08-23 固定问题返回“系统超时，请稍后重试”，已按平台错误失败关闭；停止控件、会话恢复/删除和正常回答仍待验证 |
 | 2 | Gemini | CALIBRATION_REQUIRED | 已有独立 Session、官方入口、结构采样和 fail-closed 门禁 |
 | 3 | 元宝 | CALIBRATION_REQUIRED | 已有独立 Session、官方入口、结构采样和 fail-closed 门禁 |
 | 3 | Kimi | CALIBRATION_REQUIRED | 已有独立 Session、官方入口、结构采样和 fail-closed 门禁 |

@@ -23,7 +23,7 @@ GEO Operator V2 是本地运行的内部 GEO 服务执行工具。它负责多�
 - 真实平台校准证据持久化：仅保存可见 DOM 结构属性，不读取正文、Cookie 或浏览器存储；支持人工切换菜单/确认框后继续结构采样
 - Mock AI 故障注入，以及 KZQ 10 问完整验收
 
-九个平台已进入统一平台目录、任务校验、Session、插件注册、API 和本地控制台：国内为豆包、元宝、千问、DeepSeek、Kimi，国外为 Grok、Gemini、ChatGPT、Perplexity。Phase 1（ChatGPT + 豆包）已完成真实页面校准和 KZQ 10 问真实串行执行；DeepSeek 已完成真实登录、固定流式回答保存与校准会话删除验证并进入 `EXECUTION_READY`。其余六个平台已具备官方入口登录、独立 persistent Session 与结构快照能力，状态为 `CALIBRATION_REQUIRED`。在回答完成、实时保存和聊天删除选择器经真实账号验证前，API 与 Worker 均禁止调度真实问题。Claude（包括 Claude/Anthropic 常见标识）是明确禁止的平台，不创建插件、不开放 Session，也不接受任务包。
+九个平台已进入统一平台目录、任务校验、Session、插件注册、API 和本地控制台：国内为豆包、元宝、千问、DeepSeek、Kimi，国外为 Grok、Gemini、ChatGPT、Perplexity。Phase 1（ChatGPT + 豆包）已完成真实页面校准和 KZQ 10 问真实串行执行；DeepSeek 已完成真实登录、固定流式回答保存与校准会话删除验证并进入 `EXECUTION_READY`。千问已完成登录、发送、用户/回答容器、流式完成标记和实时保存的真实结构校准，但固定问题返回平台“系统超时”，停止控件与聊天删除尚未完成，因此仍为 `CALIBRATION_REQUIRED`。其余五个平台已具备官方入口登录、独立 persistent Session 与结构快照能力。在回答完成、实时保存和聊天删除选择器经真实账号验证前，API 与 Worker 均禁止调度真实问题。Claude（包括 Claude/Anthropic 常见标识）是明确禁止的平台，不创建插件、不开放 Session，也不接受任务包。
 
 ## 安装
 

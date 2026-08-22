@@ -326,6 +326,40 @@ class ObservedWebChatPlugin:
                 return "TIMEOUT"
             raise
 
+    async def wait_for_home_hydration(self, page: Any) -> str:
+        """Wait boundedly for a hydrated signed-in home page or an intervention signal."""
+        try:
+            signal = await page.wait_for_function(
+                """selectors => {
+                  const visible = node => {
+                    if (!node) return false;
+                    const style = getComputedStyle(node);
+                    const rect = node.getBoundingClientRect();
+                    return style.visibility !== 'hidden' && style.display !== 'none'
+                      && rect.width > 0 && rect.height > 0;
+                  };
+                  for (const selector of selectors.promptInputs) {
+                    if ([...document.querySelectorAll(selector)].some(visible)) {
+                      return 'COMPOSER_READY';
+                    }
+                  }
+                  const challenge = document.querySelector(
+                    "[aria-label*='captcha' i], iframe[src*='challenge'], iframe[src*='captcha']"
+                  );
+                  if (visible(challenge)) return 'INTERVENTION_SIGNAL';
+                  return null;
+                }""",
+                arg={
+                    "promptInputs": list(self.selectors.prompt_inputs),
+                },
+                timeout=30_000,
+            )
+            return str(await signal.json_value())
+        except PlaywrightTimeoutError:
+            if await self._any_visible(page, self.selectors.login_indicators):
+                return "LOGIN_REQUIRED"
+            return "TIMEOUT"
+
     async def recover_pending_query(self, page: Any, prompt: str) -> str | None:
         """Find an already-sent prompt in same-origin recent chats without reading other text."""
         await page.goto(self.home_url, wait_until="domcontentloaded")

@@ -2,7 +2,7 @@ import unittest
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from geo_operator.browser.plugins.additional import DeepSeekPlugin
+from geo_operator.browser.plugins.additional import DeepSeekPlugin, QwenPlugin
 from geo_operator.browser.plugins.base import SideEffectNotAttempted
 from geo_operator.browser.plugins.phase1 import ChatGPTPlugin, DoubaoPlugin
 
@@ -32,6 +32,22 @@ class _RetryPage:
 
     async def wait_for_timeout(self, milliseconds: int) -> None:
         self.waits.append(milliseconds)
+
+
+class _HydrationSignal:
+    async def json_value(self) -> str:
+        return "COMPOSER_READY"
+
+
+class _HydrationPage:
+    def __init__(self) -> None:
+        self.arg = None
+        self.timeout = None
+
+    async def wait_for_function(self, expression, *, arg, timeout):
+        self.arg = arg
+        self.timeout = timeout
+        return _HydrationSignal()
 
 
 class _RetryDoubaoPlugin(DoubaoPlugin):
@@ -162,9 +178,18 @@ class PhaseOnePluginAsyncTestCase(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(SideEffectNotAttempted):
             await plugin.send_query(page, "test prompt")
-
         self.assertEqual(page.waits, [250, 250])
         self.assertFalse(plugin.send.clicked)
+
+    async def test_home_hydration_passes_selectors_as_keyword_argument(self) -> None:
+        plugin = QwenPlugin()
+        page = _HydrationPage()
+
+        result = await plugin.wait_for_home_hydration(page)
+
+        self.assertEqual(result, "COMPOSER_READY")
+        self.assertEqual(page.arg["promptInputs"], list(plugin.selectors.prompt_inputs))
+        self.assertEqual(page.timeout, 30_000)
 
     async def test_missing_response_after_confirmed_query_remains_incomplete(self) -> None:
         observation = await _ObservationDoubaoPlugin().observe_response(object())

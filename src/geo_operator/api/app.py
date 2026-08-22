@@ -461,7 +461,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 hydration = await plugin.wait_for_calibration_hydration(page)
             else:
                 await plugin.open_platform(page)
-                hydration = "HOME_PAGE"
+                hydration = await plugin.wait_for_home_hydration(page)
             menu_inspection = "NOT_REQUESTED"
             delete_confirmation_inspection = "NOT_REQUESTED"
             if body.inspect_delete_confirmation and not body.inspect_conversation_menu:

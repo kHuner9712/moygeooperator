@@ -45,6 +45,17 @@ class PlatformPolicyTestCase(unittest.TestCase):
         plugin = live_plugin("qwen")
         self.assertEqual(plugin.home_url, "https://www.qianwen.com/")
         self.assertFalse(plugin.is_home_url("https://chat.qwen.ai/"))
+        self.assertTrue(
+            plugin.is_conversation_url(
+                "https://www.qianwen.com/chat/fe9d8f58897d4de2978ee17c66a6a771"
+            )
+        )
+        self.assertFalse(plugin.is_conversation_url("https://www.qianwen.com/chat/not-a-chat"))
+        self.assertFalse(plugin.is_conversation_url("https://example.com/chat/" + "a" * 32))
+        status = plugin.calibration_status()
+        for calibrated in ("send_controls", "user_queries", "responses", "streaming_indicators"):
+            self.assertNotIn(calibrated, status["missing"])
+        self.assertIn("stop_controls", status["missing"])
 
     def test_external_labels_are_canonicalized(self) -> None:
         self.assertEqual(canonical_platform("ChatGPT"), "chatgpt")
@@ -81,7 +92,10 @@ class PlatformPolicyTestCase(unittest.TestCase):
                 self.assertFalse(plugin.calibration_complete)
                 self.assertEqual(status["support_status"], "CALIBRATION_REQUIRED")
                 self.assertFalse(status["dispatch_eligible"])
-                self.assertIn("send_controls", status["missing"])
+                if platform == "qwen":
+                    self.assertNotIn("send_controls", status["missing"])
+                else:
+                    self.assertIn("send_controls", status["missing"])
                 self.assertFalse(plugin.deletion_action_verified)
 
     def test_claude_has_no_plugin_factory(self) -> None:
