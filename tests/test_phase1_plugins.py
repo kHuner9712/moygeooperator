@@ -2,7 +2,12 @@ import unittest
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from geo_operator.browser.plugins.additional import DeepSeekPlugin, GeminiPlugin, QwenPlugin
+from geo_operator.browser.plugins.additional import (
+    DeepSeekPlugin,
+    GeminiPlugin,
+    GrokPlugin,
+    QwenPlugin,
+)
 from geo_operator.browser.plugins.base import SideEffectNotAttempted
 from geo_operator.browser.plugins.phase1 import ChatGPTPlugin, DoubaoPlugin
 
@@ -153,6 +158,24 @@ class PhaseOnePluginContractTestCase(unittest.TestCase):
             plugin.is_conversation_url("https://gemini.google.com/app/2f6968edf862d914")
         )
         self.assertFalse(plugin.is_conversation_url("https://gemini.google.com/app/not-a-chat"))
+
+    def test_grok_real_calibration_contract_is_complete_without_confirmation(self) -> None:
+        plugin = GrokPlugin()
+        self.assertTrue(plugin.response_capture_calibration_complete)
+        self.assertTrue(plugin.deletion_calibration_complete)
+        self.assertTrue(plugin.calibration_complete)
+        self.assertFalse(plugin.delete_requires_confirmation)
+        self.assertEqual(plugin.calibration_status()["missing"], [])
+        self.assertIn(
+            "button[aria-label='\u505c\u6b62\u6a21\u578b\u54cd\u5e94']",
+            plugin.selectors.stop_controls,
+        )
+        self.assertTrue(
+            plugin.is_conversation_url(
+                "https://grok.com/c/5c751a73-3a44-409c-b2ce-23f287d504fb"
+            )
+        )
+        self.assertFalse(plugin.is_conversation_url("https://grok.com/c/not-a-chat"))
 
     def test_doubao_normalizes_only_cjk_ascii_boundary_spacing(self) -> None:
         plugin = DoubaoPlugin()

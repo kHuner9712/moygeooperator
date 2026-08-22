@@ -51,6 +51,7 @@ class ObservedWebChatPlugin:
     conversation_link_selectors = ("a[href*='/c/']",)
     conversation_path_prefixes = ("/c/",)
     deletion_action_verified = True
+    delete_requires_confirmation = True
 
     @property
     def response_capture_calibration_complete(self) -> bool:
@@ -66,11 +67,12 @@ class ObservedWebChatPlugin:
 
     @property
     def deletion_calibration_complete(self) -> bool:
-        required = (
+        required = [
             self.selectors.conversation_menu_controls,
             self.selectors.delete_controls,
-            self.selectors.delete_confirm_controls,
-        )
+        ]
+        if self.delete_requires_confirmation:
+            required.append(self.selectors.delete_confirm_controls)
         return all(required) and self.deletion_action_verified
 
     @property
@@ -230,9 +232,10 @@ class ObservedWebChatPlugin:
         )
 
     async def delete_chat(self, page: Any) -> None:
-        self._require_fields(
-            "conversation_menu_controls", "delete_controls", "delete_confirm_controls"
-        )
+        required = ["conversation_menu_controls", "delete_controls"]
+        if self.delete_requires_confirmation:
+            required.append("delete_confirm_controls")
+        self._require_fields(*required)
         menu = await self._unique_visible(
             page, self.selectors.conversation_menu_controls, "conversation menu control"
         )
@@ -242,13 +245,14 @@ class ObservedWebChatPlugin:
         )
         delete = await self._unique_visible(page, self.selectors.delete_controls, "delete control")
         await delete.click()
-        await self._combined(page, self.selectors.delete_confirm_controls).first.wait_for(
-            state="visible", timeout=5_000
-        )
-        confirm = await self._unique_visible(
-            page, self.selectors.delete_confirm_controls, "delete confirmation"
-        )
-        await confirm.click()
+        if self.delete_requires_confirmation:
+            await self._combined(page, self.selectors.delete_confirm_controls).first.wait_for(
+                state="visible", timeout=5_000
+            )
+            confirm = await self._unique_visible(
+                page, self.selectors.delete_confirm_controls, "delete confirmation"
+            )
+            await confirm.click()
 
     async def verify_chat_deleted(self, page: Any) -> bool:
         self._require_fields("user_queries")
@@ -312,7 +316,8 @@ class ObservedWebChatPlugin:
                   const content = document.querySelector(
                     "article, [data-message-author-role], [data-testid^='conversation-turn-'], "
                     + "[class*='message-list-'] .v_list_row, .ds-message, user-query-content, model-response, "
-                    + ".agent-chat__list__item--human, .chat-content-item-user"
+                    + ".agent-chat__list__item--human, .chat-content-item-user, "
+                    + "[data-testid='user-message']"
                   );
                   if (content) return 'CONVERSATION_CONTENT';
                   const challenge = document.querySelector(
@@ -486,6 +491,7 @@ class ObservedWebChatPlugin:
             "dispatch_eligible": self.calibration_complete,
             "response_capture_complete": self.response_capture_calibration_complete,
             "deletion_complete": self.deletion_calibration_complete,
+            "delete_requires_confirmation": self.delete_requires_confirmation,
             "missing": [
                 name
                 for name, selectors in (
@@ -499,6 +505,7 @@ class ObservedWebChatPlugin:
                     ("delete_confirm_controls", self.selectors.delete_confirm_controls),
                 )
                 if not selectors
+                and (name != "delete_confirm_controls" or self.delete_requires_confirmation)
             ]
             + (["delete_action_verification"] if not self.deletion_action_verified else []),
         }

@@ -481,17 +481,109 @@ class KimiPlugin(ObservedWebChatPlugin):
         )
 
 
-class GrokPlugin(CalibrationPendingPlugin):
+class GrokPlugin(ObservedWebChatPlugin):
     phase = 3
     name = "grok"
+    observed_at = "2026-08-23"
+    deletion_action_verified = True
+    delete_requires_confirmation = False
     home_url = "https://grok.com/"
-    conversation_link_selectors = ("a[href*='/c/']",)
+    conversation_link_selectors = ("a[href^='/c/']",)
     conversation_path_prefixes = ("/c/",)
     selectors = PhaseOneSelectors(
         login_indicators=("button:has-text('Sign in')", "a:has-text('Sign in')"),
-        prompt_inputs=("textarea", "[contenteditable='true'][role='textbox']"),
-        send_controls=(),
+        prompt_inputs=(
+            ".query-bar-editor[role='textbox'][contenteditable='true'][aria-label='Ask Grok anything']",
+        ),
+        send_controls=("button[data-testid='chat-submit'][aria-label='提交']",),
+        user_queries=("[data-testid='user-message']",),
+        responses=("[data-testid='assistant-message']",),
+        streaming_indicators=("button[aria-label='\u505c\u6b62\u6a21\u578b\u54cd\u5e94']",),
+        stop_controls=("button[aria-label='\u505c\u6b62\u6a21\u578b\u54cd\u5e94']",),
+        conversation_menu_controls=(
+            "button[aria-label='\u5907\u9009\u65b9\u6848'][aria-haspopup='menu']",
+        ),
+        delete_controls=("[role='menuitem']:has-text('\u5220\u9664')",),
+        final_response_descendants=(
+            (
+                "xpath=ancestor::*[starts-with(@id,'response-')][1]"
+                "//*[contains(@class,'action-buttons') and contains(@class,'last-response')]"
+            ),
+        ),
     )
+
+
+    def is_conversation_url(self, value: str) -> bool:
+        if not super().is_conversation_url(value):
+            return False
+        conversation_id = urlsplit(value).path.removeprefix("/c/").strip("/")
+        groups = conversation_id.split("-")
+        return [len(group) for group in groups] == [8, 4, 4, 4, 12] and all(
+            character in "0123456789abcdef"
+            for group in groups
+            for character in group.lower()
+        )
+
+    async def delete_chat(self, page: object) -> None:
+        if not self.is_conversation_url(page.url):
+            raise PluginPageAbnormal("Grok delete requires a conversation URL")
+        path = urlsplit(page.url).path
+        self._deleting_conversation_path = path
+        link = page.locator(f"a[href='{path}']")
+        try:
+            await link.wait_for(state="attached", timeout=10_000)
+        except PlaywrightTimeoutError as exc:
+            raise PluginPageAbnormal("Grok conversation item did not hydrate") from exc
+        if await link.count() != 1:
+            raise PluginPageAbnormal("Grok conversation item is not unique")
+        item = link.locator(
+            "xpath=ancestor::li[contains(@class,'group/menu-item')][1]"
+        )
+        if await item.count() != 1:
+            raise PluginPageAbnormal("Grok conversation container is not unique")
+        await item.scroll_into_view_if_needed(timeout=10_000)
+        await item.hover()
+        menu = item.locator(
+            "button[aria-label='\u5907\u9009\u65b9\u6848'][aria-haspopup='menu']"
+        )
+        if await menu.count() != 1 or not await menu.is_visible():
+            raise PluginPageAbnormal("Grok conversation menu is not uniquely visible")
+        await menu.click()
+        delete = page.get_by_role("menuitem", name="\u5220\u9664", exact=True)
+        try:
+            await delete.wait_for(state="visible", timeout=5_000)
+        except PlaywrightTimeoutError as exc:
+            raise PluginPageAbnormal("Grok delete item did not become visible") from exc
+        if await delete.count() != 1:
+            raise PluginPageAbnormal("Grok delete item is not unique")
+        await delete.click()
+
+    async def verify_chat_deleted(self, page: object) -> bool:
+        path = getattr(self, "_deleting_conversation_path", None)
+        if not isinstance(path, str) or not path.startswith("/c/"):
+            return False
+        if not await self.detect_login(page) or urlsplit(page.url).path == path:
+            return False
+        return await page.locator(f"a[href='{path}']").count() == 0
+
+    async def deletion_absence_confirmed(
+        self, page: object, conversation_url: str
+    ) -> bool:
+        if not self.is_conversation_url(conversation_url):
+            return False
+        path = urlsplit(conversation_url).path
+        if urlsplit(page.url).path != path:
+            return False
+        if await page.locator("[data-testid='user-message']").count():
+            return False
+        if await page.locator("[data-testid='assistant-message']").count():
+            return False
+        await page.goto(self.home_url, wait_until="domcontentloaded")
+        if await self.wait_for_home_hydration(page) != "COMPOSER_READY":
+            return False
+        if not await self.detect_login(page):
+            return False
+        return await page.locator(f"a[href='{path}']").count() == 0
 
 
 class PerplexityPlugin(CalibrationPendingPlugin):
