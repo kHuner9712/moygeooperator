@@ -1,134 +1,106 @@
-# MOY GEO Operator — Internal
+# GEO Operator V2
 
-临时内部 GEO 生产系统，目标支撑约 20 家并发客户。PostgreSQL 是唯一 System of
-Record；NocoDB 是运营 UI；n8n 是流程编排。本仓库与 MOY 正式产品仓库完全独立。
+GEO Operator V2 是本地运行的内部 GEO 服务执行工具。它负责多租户资料、原始公网证据、任务包、可见浏览器执行、结果保存和结果包导出；不负责 GEO 策略分析、内容生成、商业决策、CRM 或商业用户系统。
 
-> **当前能力状态（2026-08）**：**True N8N Full-Chain Acceptance Gate 已完成**。
-> `scripts/e2e/true-n8n-shadow-runtime.sh`（L0–L29）用同一 synthetic tenant
-> **N8N-E2E-A** + 同一条因果数据链，让 **WF-01 → WF-08 全部由真实 n8n workflow
-> 执行**并通过业务结果断言（非 DB function contract），另含真实 WF-99 故障注入
-> （TEST_HTTP_FAIL → 500 → errorTrigger → fail_job）、cross-client WF-07 攻击
-> 与 max_attempts=3 重试耗尽。全绿 verdict = **SHADOW_RUN_READY**，证据见
-> `artifacts/true-n8n-shadow-runtime.json`。
-> 但 **REAL_CUSTOMER_NOT_READY** —— 仅具备 **FIRST_REAL_CLIENT_SHADOW_RUN** 的
-> 前提条件。仓库内所有业务数据均为 synthetic fixture，不得当作真实业务结果。
-> 尚未接入任何真实客户、真实凭证或真实对外发布。该 True N8N 全链路是
-> **Local Release Gate**（PR 合并前必须执行并提交 artifact），不随 CI 运行。
+## 已实现范围
 
-## 能力状态（Capability State）
+- Python 3.12、SQLite WAL、外键、租户文件隔离和原子文件写入
+- 客户档案草稿、`CLIENT_PROFILE_REVIEW` 人工审批和 `CLIENT_PROFILE.zip`
+- Public Discovery 原始证据保存：URL、抓取时间、原始文本、截图、来源类型、`AI_PENDING` 可信度字段，以及 `PUBLIC_DISCOVERY.zip`
+- `GEO_TASK_PACKAGE.zip` 安全导入：schema、tenant、SHA-256、ZIP 路径、平台、任务 ID、账号 ID、序号和幂等键校验
+- 持久化 Browser Execution 状态机、外部副作用 intent/confirmed 账本、回答 checkpoint、实时截图和结果原子提交
+- 独立 Browser Worker、执行租约、心跳、过期租约回收、Session 单执行锁、persistent Chromium profile，并显式启用 Chromium sandbox
+- 验证码、登录失效、安全验证、限流、账号受限、DOM 异常和完成不确定时 fail closed 暂停，禁止自动绕过
+- 人工接管后由独立 Worker 重新验证；复核失败保留暂停状态和截图证据
+- 验证类暂停按 tenant/platform/account 阻塞所有任务包，Session 显示 HUMAN_TAKEOVER_REQUIRED；仅人工 Continue + Worker 复核可解除
+- 已校准的平台明确未投递标记会保留原 INTENT 和完整审计链，验证完成后才允许安全重试
+- 同一任务包严格按序执行；前序未 `COMPLETED` 时后序任务不能被领取
+- 回答保存和聊天删除均确认后才允许完成；结果导出前需要 `RESULT_EXPORT` 人工审批
+- 本机 FastAPI 控制台：客户、档案、任务、审批、进度、暂停、继续、Session、checkpoint、错误截图和导出
+- Mock AI 故障注入，以及 KZQ 10 问完整验收
 
-| 能力 | 状态 | 备注 |
-|------|------|------|
-| Truth Intake（WF-01） | **LIMITED** | 真实读取文档正文并解析 Claim；格式仅 TXT/MD/CSV；PDF/网页走 `parse_truth_document`（PDF 结构化正文解析为后置项，当前 PAGE/SECTION 记录尽力而为）。DOCX/XLSX 明确 **NOT_IMPLEMENTED**。 |
-| Surface Discovery（WF-02） | **LIMITED** | 依赖工具型服务（SearXNG/Crawl4AI，`tooling` profile 才启动）；未接真实抓取。 |
-| Intent / Query（WF-03） | **IMPLEMENTED** | 统一 0–100 加权评分（0.35/0.40/0.25），去重 + 确定性入队。 |
-| Engine Observation（WF-04） | **LIMITED** | 真实 Adapter contract；`LOCAL_OLLAMA` 可用；`OPENAI/GEMINI/PERPLEXITY/UI_OBSERVATION` 未接 → **UNSUPPORTED / MANUAL_OBSERVATION_REQUIRED**，fail closed。 |
-| Gap / Action（WF-05） | **IMPLEMENTED** | 高效的 gap→action 生成与优先级继承。 |
-| Content Factory（WF-06） | **LIMITED** | 内容有独立 Fact Gate + Compliance Gate：`fact_check_status=PASSED` 与 `compliance_status=PASSED` 才进发布队列；禁止 `VERIFIED` 直接标内容。非法数值/新增事实 → `CONTENT_QA_FAILED` → BLOCK。 |
-| Publication（WF-07） | **SHADOW_ONLY** | 生产路径**无 simulated publish**。无真实 adapter → `MANUAL_REQUIRED` / `WAITING_APPROVAL`，绝不直接 `PUBLISHED`。API 自动发布需真实凭证，当前 **unavailable**。 |
-| Retest / Reporting（WF-08） | **IMPLEMENTED** | 周期报告 + 异常通知（Feishu webhook，HMAC-SHA256 加签）。报表只汇总已存在的 observation window。 |
-| Job Lease / Retry | **IMPLEMENTED** | `recover_expired_leases` 回收过期 RUNNING；`fail_job` 指数退避 `RETRY_WAIT`→`FAILED`+Exception。 |
-| Multi-client Isolation | **IMPLEMENTED** | 跨 client 的对象操作一律 fail closed；`SYNTH-A`/`SYNTH-B` adversarial 测试通过。 |
-| Operator Runtime（NocoDB views） | **IMPLEMENTED** | `v_client_health` / `v_open_exceptions` / `v_manual_publish_queue` / `v_failed_retry_jobs` / `v_content_qa_failures` 等。 |
-| CI / Verification Gate | **IMPLEMENTED** | 轻量 GitHub Actions（分钟级）：JSON 校验 + 违禁字符串扫描 + 静态契约检查 + 干净库迁移/视图/seeds + 集成测试（含 Shadow Runtime DB-contract E2E）。**True N8N Full-Chain**（真实执行 WF-01..WF-08/WF-99）作为 **Local Release Gate**，由 `scripts/e2e/true-n8n-shadow-runtime.sh` 执行并在 PR 合并前提交 `artifacts/true-n8n-shadow-runtime.json`，不跑在 CI 里。 |
+Phase 1（ChatGPT + 豆包）已完成真实页面校准。ChatGPT 和豆包均已完成 KZQ 10 问真实串行执行；豆包额外完成图片验证码人工接管、平台未投递证据对账和断点恢复。两个插件遇到 DOM 变化或信号冲突都会 fail closed 暂停。Phase 2/3 平台尚未进入实现范围。
 
-**关键约束**：synthetic fixture 只允许存在于 `db/seeds/`、`tests/`；运行时 workflow
-统一输入 `{ job_id, client_id, correlation_id }`，`client_id` 是权威 scope，
-不得出现硬编码 `SYNTH-ACME` 或 placeholder 执行路径。
+## 安装
 
-## 栈
+建议使用 uv，并固定 Python 3.12：
 
-- PostgreSQL 16 — System of Record（固定 `postgres:16-alpine`）
-- NocoDB Community — 内部运营控制台（固定 `nocodb/nocodb:0.263.1`）
-- n8n self-hosted — Workflow / Scheduler（固定 `n8nio/n8n:2.34.5`）
-- Ollama — 默认本地 LLM（固定 `ollama/ollama:0.32.7`）
-- 工具型（`tooling` profile，按需启动）：Crawl4AI、SearXNG
-
-## 快速开始（首次部署）
-
-```bash
-cp .env.example .env        # 填写真实 secret，勿提交 .env
-./scripts/deploy/deploy.sh  # 完整部署：stack up → migrations → views → import → verify
+```powershell
+uv python install 3.12
+uv sync --python 3.12 --extra dev
+uv run playwright install chromium
 ```
 
-分步执行（等价）：
-```bash
-docker compose up -d
-docker compose exec -T postgres bash /srv/db/run-migrations.sh
-docker compose exec -T postgres bash /srv/db/apply-views.sh
-docker compose exec -T n8n n8n import:workflow --input=/home/node/workflows --separate
+默认配置见 `.env.example`。控制台强制绑定 loopback 地址，不能暴露到公网。
+
+## 运行方式
+
+生产式本地运行仍保持控制台与 Browser Worker 两个独立进程，但 Windows 启动器会统一管理它们。
+
+正常使用时，只需双击项目根目录的 `START_GEO_OPERATOR.cmd`。启动器会：
+
+- 检查并启动本地控制台；
+- 检查并启动 Browser Worker；
+- 避免重复启动两个进程；
+- 等待控制台健康检查通过；
+- 自动打开 <http://127.0.0.1:8765>。
+
+运行日志分别保存在 `logs/launcher.log`、`logs/server.stdout.log`、`logs/server.stderr.log`、`logs/worker.stdout.log` 和 `logs/worker.stderr.log`。正常操作不再需要手工运行 Worker 命令。
+
+仅在开发调试时，才分别运行：
+
+```powershell
+uv run geo-operator
+uv run geo-operator-worker
 ```
 
-### 部署 / 升级 / 激活说明（P0.11）
+控制台负责审批、暂停、继续和调度信号；Browser Worker 负责浏览器执行、租约和人工处理后的页面复核。
 
-- Git 中 `n8n/workflows/*.json` 是 **source representation**（SSOT）；n8n 的 workflow
-  metadata DB 只是 derived artifact，不当作 SSOT，也不手工编辑。
-- `./scripts/deploy/deploy.sh` 支持：`full`（首部署）、`--reimport`（仅重导入 workflow）、
-  `--verify`（仅验证）。
-- 激活策略：默认 **无 workflow active**。Shadow Run 阶段推荐仅激活 `wf08`
-  （周期报告），其余 wf01–wf07 保持手动，直到受监督。
-  - 方式 A：`ACTIVE_WORKFLOWS="wf08" N8N_URL=... N8N_API_KEY=... ./scripts/deploy/deploy.sh`
-  - 方式 B：n8n UI 手动 toggle（推荐首客户）。
-- 升级：改 workflow JSON → `--reimport` → n8n UI 确认 → 同步激活。
-- 验证已加载：`./scripts/deploy/deploy.sh --verify`，或浏览器访问 `http://localhost:5678`。
+## 真实账号首次登录
 
-### 备份（P1）
+首次登录时先只启动控制台：
 
-- `scripts/backup/backup.sh` 做 PostgreSQL 逻辑备份（`pg_dump -Fc`），留存 daily/weekly。
-- 调度建议（Linux cron，每日 02:00）：
-  ```
-  0 2 * * * cd /path/to/geo-operator && BACKUP_DIR=/srv/geo-operator/backups ./scripts/backup/backup.sh >> /var/log/geo-operator-backup.log 2>&1
-  ```
-- 恢复验证：`pg_restore -d <restore_db> --clean --if-exists <backup.dump>` 后，
-  执行 `./scripts/deploy/deploy.sh --verify` 确认 schema_migrations 与 views 完整。
+1. 创建或选择客户租户。
+2. 点击“使用系统 Chrome 登录 ChatGPT”或“使用系统 Chrome 登录豆包”。该窗口由本机 Google Chrome 直接启动，没有 Playwright 连接或自动化启动参数。
+3. 手工登录并处理验证码/安全验证；登录成功后关闭这个系统 Chrome 窗口，使 persistent profile 完整落盘。
+4. 点击“检测登录/结构”。系统会用同一 profile 启动系统 Chrome channel；快照只返回可见 DOM 的标签和属性，不读取页面文本、Cookie、本地存储或截图。
+5. 点击“关闭校准 Chrome 并释放”。浏览器关闭，独立 Worker 才能取得该 profile。
+6. 再启动 `uv run geo-operator-worker`。不要让人工登录窗口、校准窗口与 Worker 同时占用同一 Session profile。
 
-## 数据模型
+运行中若 Worker 因验证码、登录失效、安全验证或页面异常暂停，直接在 Worker 打开的可见浏览器中人工处理；随后在控制台点击 `Continue`。Worker 会先复核页面，安全后才从保存的 `resume_state` 继续。
 
-迁移：`db/migrations/`（版本化 001–012，`schema_migrations` 记录）。核心表覆盖
-Client / Truth / Entity / Surface / Intent / Observation / Gap / Action /
-Content / Publication / Report / Job / Exception / LLM Run / Cost。
+## KZQ 任务包
 
-## 目录
+创建租户后，从控制台或 `/api/tenants` 取得 `tenant_id`。生成不少于 10 问的验收包：
 
-```text
-db/migrations/   版本化迁移（015 = Shadow Runtime Publication Closure）
-db/views/        operator_runtime.sql 等面向运营的视图
-db/seeds/        SYNTHETIC 测试数据（仅测试 fixture；synthetic_n8n_e2e.sql = N8N-E2E tenant）
-db/run-migrations.sh / apply-views.sh / run-seeds.sh
-n8n/workflows/   wf01..wf08 + wf99（Git 为 source representation）
-scripts/         backup / health / deploy / e2e（true-n8n-shadow-runtime.sh True N8N 全链路）
-tests/integration/  集成测试（含 shadow_runtime_e2e.sql：WF-01..WF-08 DB-contract E2E）
-tests/runtime/    本地 deterministic mock 服务（mock-search / mock-crawl / mock-engine / /fail）
-docker-compose.e2e.yml  True N8N 全链路的 e2e 覆盖（OLLAMA_URL 字面量 + mock 端点）
-artifacts/       本地 E2E 产物（true-n8n-shadow-runtime.json）
-.github/workflows/  轻量 CI
+```powershell
+uv run python scripts/create_kzq_test_package.py `
+  --tenant-id <TENANT_ID> `
+  --platform mock `
+  --account-id manual `
+  --package-id kzq-round-1 `
+  --output KZQ_GEO_TASK_PACKAGE.zip
 ```
 
-## 工程规则
+真实平台把 `--platform` 改为 `chatgpt` 或 `doubao`。导入后必须先批准客户档案，再批准 `TASK_EXECUTION`。所有任务完成后申请并批准 `RESULT_EXPORT`，才能导出 `RESULT_PACKAGE.zip`。
 
-- LLM 不直接制造 canonical 企业事实；公开内容只用 VERIFIED Claim。
-- 所有客户对象带 `client_id`；cross-client 混写 = CRITICAL defect，一律 fail closed。
-- 昂贵/外部动作必须有 deterministic idempotency key。
-- 缺 Evidence / 无效 credential / 未支持平台 / 未确认策略 / 事实冲突 /
-  引擎失败 / client 不匹配 → 一律 fail closed，创建 Exception。
-- 发布：无真实 adapter → `MANUAL_REQUIRED`；有 adapter → 真实 provider request →
-  verify → `PUBLISHED`。**禁止 simulated publish 标 PUBLISHED**。
-- 凭证只存 reference；客户私有文件、raw crawls、截图不入 Git。
+## 验证
 
-## Known Limitations（真实限制）
+```powershell
+uv run ruff check src tests scripts
+uv run pytest -q
+```
 
-- **Truth parser**：TXT/MD/CSV 真实解析；PDF 结构化正文解析仍是后置项（尽力
-  PAGE/SECTION），DOCX/XLSX **NOT_IMPLEMENTED**。
-- **Engine adapters**：真正可用仅 `LOCAL_OLLAMA`（Ollama）。`OPENAI_API` /
-  `GEMINI_API` / `PERPLEXITY_API` / `UI_OBSERVATION` / `MANUAL_OBSERVATION` 定义
-  了 contract 但无真实凭证 → **MANUAL / UNSUPPORTED**，fail closed。
-- **对外发布**：AUTO_API 无真实凭证 → `MANUAL_REQUIRED`。抖音/快手等真实 API
-  未接入。
-- **Factuality**：基于规则 + Truth comparison（token overlap + 数字矛盾检测），
-  第二模型仅作辅助，不作唯一事实裁判。
-- **尚未开始**真实客户 Shadow Run 的导入与执行；本地 True N8N 全链路已用 synthetic
-  tenant（N8N-E2E-A/B）真实跑通 WF-01..WF-08 + WF-99，verdict=**SHADOW_RUN_READY**
-  （`scripts/e2e/true-n8n-shadow-runtime.sh`，DB-contract 层保留
-  `tests/integration/shadow_runtime_e2e.sql` 作为 CI 的 DB_CONTRACT_E2E）。
+浏览器测试覆盖慢回答、停顿、长回答、页面刷新、崩溃恢复、重复发送防护、保存失败恢复、删除失败阻断下一题、人工复核成功/失败、验证码、限流、账号限制、DOM 变化、永不完成和 KZQ 10 问结果包。
 
-详见上游设计包 `../GEO_Operator_Internal_Pack/`。
+## 设计文档
+
+- `docs/GEO_Operator_V2_Base_Specification.md`
+- `docs/CODEX_DEVELOPMENT_INSTRUCTION.md`
+- `docs/ARCHITECTURE_DESIGN.md`
+- `docs/PACKAGE_CONTRACTS.md`
+- `docs/BROWSER_EXECUTION_DESIGN.md`
+
+## 真实平台上线前校准
+
+真实 ChatGPT/豆包选择器只来自已观察的真实页面和官方前端资源。豆包虚拟列表不使用消息总数判定关联，而是校验末条助手回答在末条用户问题之后。任何无法唯一识别、信号冲突、登录失效或安全验证都会进入 `PAUSED`，禁止自动绕过。

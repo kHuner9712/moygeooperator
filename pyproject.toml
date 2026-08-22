@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "geo-operator-v2"
+version = "0.1.0"
+description = "Internal GEO browser execution operator"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "pydantic>=2.9,<3",
+  "uvicorn[standard]>=0.30,<1",
+  "playwright>=1.48,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9", "httpx>=0.27,<1", "ruff>=0.7,<1"]
+
+[project.scripts]
+geo-operator = "geo_operator.__main__:main"
+geo-operator-worker = "geo_operator.worker_main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/geo_operator"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint.isort]
+known-first-party = ["geo_operator", "tests"]
