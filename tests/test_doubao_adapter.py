@@ -2,7 +2,22 @@ import unittest
 
 from geo_operator.browser.plugins.catalog import live_plugin
 from geo_operator.browser.plugins.doubao import DoubaoPlugin
-from geo_operator.browser.plugins.phase1 import DoubaoPlugin as PhaseOneDoubaoPlugin
+
+
+class _HydrationSignal:
+    async def json_value(self) -> str:
+        return "CONVERSATION_CONTENT"
+
+
+class _HydrationPage:
+    def __init__(self) -> None:
+        self.expression = ""
+        self.timeout = None
+
+    async def wait_for_function(self, expression, *, timeout):
+        self.expression = expression
+        self.timeout = timeout
+        return _HydrationSignal()
 
 
 class DoubaoAdapterTestCase(unittest.TestCase):
@@ -17,9 +32,23 @@ class DoubaoAdapterTestCase(unittest.TestCase):
         self.assertIn(
             "button[data-testid='chat_input_send_button']", plugin.selectors.send_controls
         )
-        self.assertEqual(plugin.selectors.user_queries, PhaseOneDoubaoPlugin.selectors.user_queries)
-        self.assertEqual(plugin.selectors.responses, PhaseOneDoubaoPlugin.selectors.responses)
+        self.assertEqual(plugin.selectors.user_queries[0], "[data-testid='send_message']")
+        self.assertEqual(plugin.selectors.responses[0], "[data-testid='receive_message']")
         self.assertTrue(plugin.calibration_complete)
+
+
+class DoubaoAdapterAsyncTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_current_message_nodes_are_conversation_hydration_signals(self) -> None:
+        plugin = DoubaoPlugin()
+        page = _HydrationPage()
+
+        result = await plugin.wait_for_calibration_hydration(page)
+
+        self.assertEqual(result, "CONVERSATION_CONTENT")
+        self.assertIn("[data-testid='send_message']", page.expression)
+        self.assertIn("[data-testid='receive_message']", page.expression)
+        self.assertIn("[class*='message-list-'] .v_list_row", page.expression)
+        self.assertEqual(page.timeout, 30_000)
 
 
 if __name__ == "__main__":
