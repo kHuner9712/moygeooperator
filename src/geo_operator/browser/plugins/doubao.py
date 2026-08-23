@@ -14,6 +14,10 @@ class DoubaoPlugin(_PhaseOneDoubaoPlugin):
     Prefer stable data-testid and Semi UI attributes while retaining the previously calibrated
     DOM selectors as fallbacks. Current Doubao conversations expose stable send/receive message
     test ids, so recovery hydration and idempotency checks must recognize those nodes too.
+
+    Doubao can replace a restored tab while a saved conversation is hydrating. Worker state owns
+    the BrowserContext, not a particular tab, so plugin operations recover onto the newest live
+    page instead of treating one closed Page object as a closed browser session.
     """
 
     observed_at = "2026-08-23"
@@ -54,35 +58,111 @@ class DoubaoPlugin(_PhaseOneDoubaoPlugin):
         query_failure_descendants=_PhaseOneDoubaoPlugin.selectors.query_failure_descendants,
     )
 
-    async def wait_for_calibration_hydration(self, page):
-        """Recognize both current data-testid messages and the older virtual-list structure."""
-        try:
-            signal = await page.wait_for_function(
-                """() => {
-                  const visible = node => {
-                    if (!node) return false;
-                    const style = getComputedStyle(node);
-                    const rect = node.getBoundingClientRect();
-                    return style.visibility !== 'hidden' && style.display !== 'none'
-                      && rect.width > 0 && rect.height > 0;
-                  };
-                  const selectors = [
-                    "[data-testid='send_message']",
-                    "[data-testid='receive_message']",
-                    "[class*='message-list-'] .v_list_row"
-                  ];
-                  for (const selector of selectors) {
-                    if ([...document.querySelectorAll(selector)].some(visible)) {
-                      return 'CONVERSATION_CONTENT';
-                    }
-                  }
-                  const challenge = document.querySelector(
-                    "[aria-label*='captcha' i], iframe[src*='challenge'], iframe[src*='captcha']"
-                  );
-                  return visible(challenge) ? 'INTERVENTION_SIGNAL' : null;
-                }""",
-                timeout=30_000,
+    @staticmethod
+    def _closed_target_error(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return any(
+            marker in text
+            for marker in (
+                "target page, context or browser has been closed",
+                "page has been closed",
+                "target closed",
             )
-            return str(await signal.json_value())
-        except PlaywrightTimeoutError:
-            return "TIMEOUT"
+        )
+
+    async def _live_page(self, page):
+        try:
+            if not page.is_closed():
+                return page
+        except Exception:
+            pass
+
+        context = page.context
+        for candidate in reversed(context.pages):
+            try:
+                if not candidate.is_closed():
+                    return candidate
+            except Exception:
+                continue
+        return await context.new_page()
+
+    async def open_platform(self, page) -> None:
+        await super().open_platform(await self._live_page(page))
+
+    async def detect_login(self, page) -> bool:
+        return await super().detect_login(await self._live_page(page))
+
+    async def detect_human_intervention(self, page) -> str | None:
+        return await super().detect_human_intervention(await self._live_page(page))
+
+    async def send_query(self, page, prompt: str) -> None:
+        await super().send_query(await self._live_page(page), prompt)
+
+    async def query_exists(self, page, prompt: str) -> bool:
+        return await super().query_exists(await self._live_page(page), prompt)
+
+    async def query_delivery_failed(self, page, prompt: str) -> bool:
+        return await super().query_delivery_failed(await self._live_page(page), prompt)
+
+    async def observe_response(self, page):
+        return await super().observe_response(await self._live_page(page))
+
+    async def screenshot(self, page) -> bytes:
+        return await super().screenshot(await self._live_page(page))
+
+    async def structural_snapshot(self, page):
+        return await super().structural_snapshot(await self._live_page(page))
+
+    async def recover_pending_query(self, page, prompt: str) -> str | None:
+        return await super().recover_pending_query(await self._live_page(page), prompt)
+
+    async def conversation_in_recent_history(self, page, conversation_url: str) -> bool:
+        return await super().conversation_in_recent_history(
+            await self._live_page(page), conversation_url
+        )
+
+    async def deletion_absence_confirmed(self, page, conversation_url: str) -> bool:
+        return await super().deletion_absence_confirmed(
+            await self._live_page(page), conversation_url
+        )
+
+    async def wait_for_calibration_hydration(self, page):
+        """Recognize current messages and survive a Doubao tab replacement during hydration."""
+        target = await self._live_page(page)
+        for attempt in range(2):
+            try:
+                signal = await target.wait_for_function(
+                    """() => {
+                      const visible = node => {
+                        if (!node) return false;
+                        const style = getComputedStyle(node);
+                        const rect = node.getBoundingClientRect();
+                        return style.visibility !== 'hidden' && style.display !== 'none'
+                          && rect.width > 0 && rect.height > 0;
+                      };
+                      const selectors = [
+                        "[data-testid='send_message']",
+                        "[data-testid='receive_message']",
+                        "[class*='message-list-'] .v_list_row"
+                      ];
+                      for (const selector of selectors) {
+                        if ([...document.querySelectorAll(selector)].some(visible)) {
+                          return 'CONVERSATION_CONTENT';
+                        }
+                      }
+                      const challenge = document.querySelector(
+                        "[aria-label*='captcha' i], iframe[src*='challenge'], iframe[src*='captcha']"
+                      );
+                      return visible(challenge) ? 'INTERVENTION_SIGNAL' : null;
+                    }""",
+                    timeout=30_000,
+                )
+                return str(await signal.json_value())
+            except PlaywrightTimeoutError:
+                return "TIMEOUT"
+            except Exception as exc:
+                if attempt == 0 and self._closed_target_error(exc):
+                    target = await self._live_page(target)
+                    continue
+                raise
+        return "TIMEOUT"
