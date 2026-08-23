@@ -155,5 +155,5 @@ class KimiPlugin(_AdditionalKimiPlugin):
             except PlaywrightTimeoutError:
                 continue
             if await self.query_exists(page, prompt):
-                return urlsplit(page.url)._replace(query="", fragment="").geturl()
+                return page.url
         return None
