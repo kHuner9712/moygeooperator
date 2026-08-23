@@ -9,11 +9,8 @@ from geo_operator.browser.plugins.additional import (
     QwenPlugin,
     YuanbaoPlugin,
 )
-from geo_operator.browser.plugins.phase1 import (
-    ChatGPTPlugin,
-    DoubaoPlugin,
-    ObservedWebChatPlugin,
-)
+from geo_operator.browser.plugins.doubao import DoubaoPlugin
+from geo_operator.browser.plugins.phase1 import ChatGPTPlugin, ObservedWebChatPlugin
 from geo_operator.platforms import REAL_PLATFORM_IDS, canonical_platform
 
 PLUGIN_FACTORIES: dict[str, type[ObservedWebChatPlugin]] = {
