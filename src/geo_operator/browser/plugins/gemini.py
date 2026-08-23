@@ -47,17 +47,17 @@ class GeminiPlugin(_AdditionalGeminiPlugin):
         ),
         user_queries=(
             (
-                "user-query-content .query-content .query-text, "
-                "user-query .query-text, .user-query-bubble-with-background, .user-query, "
-                "user-query-content .query-content"
+                "user-query .query-text, user-query-content .query-text, "
+                "user-query .query-content:not(:has(.query-text)), "
+                "user-query-content .query-content:not(:has(.query-text)), "
+                ".user-query-bubble-with-background, .user-query"
             ),
         ),
         responses=(
             (
-                "model-response message-content .markdown, "
-                "model-response .model-response-text .markdown, "
-                "model-response message-content, .model-response-text, .response-content, "
-                "structured-content-container.model-response-text .markdown.markdown-main-panel"
+                "model-response message-content, "
+                "model-response:not(:has(message-content)) .model-response-text, "
+                "model-response:not(:has(message-content)):not(:has(.model-response-text))"
             ),
         ),
         streaming_indicators=(
