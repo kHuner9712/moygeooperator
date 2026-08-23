@@ -127,12 +127,28 @@ class DoubaoPlugin(_PhaseOneDoubaoPlugin):
         )
 
     async def wait_for_calibration_hydration(self, page):
-        """Recognize current messages and survive a Doubao tab replacement during hydration."""
+        """Recognize mounted messages and survive a Doubao tab replacement during hydration.
+
+        Doubao virtualizes conversation rows. A restored message can be mounted in the DOM while
+        temporarily outside the visible viewport or reporting a zero-sized rectangle. Hydration
+        therefore uses DOM attachment for message nodes; visibility remains required only for
+        intervention overlays.
+        """
         target = await self._live_page(page)
         for attempt in range(2):
             try:
                 signal = await target.wait_for_function(
                     """() => {
+                      const messageSelectors = [
+                        "[data-testid='send_message']",
+                        "[data-testid='receive_message']",
+                        "[class*='message-list-'] .v_list_row"
+                      ];
+                      for (const selector of messageSelectors) {
+                        if (document.querySelector(selector)) {
+                          return 'CONVERSATION_CONTENT';
+                        }
+                      }
                       const visible = node => {
                         if (!node) return false;
                         const style = getComputedStyle(node);
@@ -140,16 +156,6 @@ class DoubaoPlugin(_PhaseOneDoubaoPlugin):
                         return style.visibility !== 'hidden' && style.display !== 'none'
                           && rect.width > 0 && rect.height > 0;
                       };
-                      const selectors = [
-                        "[data-testid='send_message']",
-                        "[data-testid='receive_message']",
-                        "[class*='message-list-'] .v_list_row"
-                      ];
-                      for (const selector of selectors) {
-                        if ([...document.querySelectorAll(selector)].some(visible)) {
-                          return 'CONVERSATION_CONTENT';
-                        }
-                      }
                       const challenge = document.querySelector(
                         "[aria-label*='captcha' i], iframe[src*='challenge'], iframe[src*='captcha']"
                       );
