@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from geo_operator.browser.plugins.additional import (
     DeepSeekPlugin,
-    GeminiPlugin,
     GrokPlugin,
     KimiPlugin,
     PerplexityPlugin,
@@ -10,6 +9,7 @@ from geo_operator.browser.plugins.additional import (
     YuanbaoPlugin,
 )
 from geo_operator.browser.plugins.doubao import DoubaoPlugin
+from geo_operator.browser.plugins.gemini import GeminiPlugin
 from geo_operator.browser.plugins.phase1 import ChatGPTPlugin, ObservedWebChatPlugin
 from geo_operator.platforms import REAL_PLATFORM_IDS, canonical_platform
 
