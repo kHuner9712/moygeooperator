@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import time
+
 from geo_operator.browser.plugins.additional import KimiPlugin as _AdditionalKimiPlugin
 from geo_operator.browser.plugins.phase1 import PhaseOneSelectors
 
@@ -13,16 +16,15 @@ class KimiPlugin(_AdditionalKimiPlugin):
     worker can record a QUERY_SEND intent and click a stop control without ever delivering the
     prompt.
 
-    Kimi can also occasionally accept the click at the DOM level without committing the prompt.
-    When the exact prompt remains in the composer, no matching user turn exists, and no stop/loading
-    state is active after a bounded grace period, the page itself proves non-delivery. The worker may
-    then perform one bounded automatic retry without weakening the normal idempotency guard.
+    Kimi can also occasionally accept a click at the DOM level without committing the prompt. After
+    the first click this adapter waits boundedly for durable acceptance evidence. It retries exactly
+    once only when the page still shows the exact original prompt in an idle composer, has not routed
+    to a conversation URL, and has no stop/loading state. This keeps the normal idempotency guard
+    intact while recovering the platform-specific dropped-click race before control returns to the
+    worker.
     """
 
     observed_at = "2026-08-23"
-    can_prove_query_non_delivery = True
-    query_non_delivery_grace_seconds = 4.0
-    automatic_retry_on_proven_non_delivery = True
 
     selectors = PhaseOneSelectors(
         login_indicators=_AdditionalKimiPlugin.selectors.login_indicators,
@@ -56,17 +58,38 @@ class KimiPlugin(_AdditionalKimiPlugin):
         query_failure_descendants=_AdditionalKimiPlugin.selectors.query_failure_descendants,
     )
 
-    async def query_delivery_failed(self, page, prompt: str) -> bool:
-        """Prove a dropped send only from durable composer state, never from history absence alone."""
+    async def send_query(self, page, prompt: str) -> None:
+        await super().send_query(page, prompt)
+
+        expected = self.normalize_query_text(prompt)
+        started = time.monotonic()
+        while time.monotonic() - started < 5.0:
+            if await self.query_exists(page, prompt):
+                return
+            if self.is_conversation_url(page.url):
+                return
+            if await self._any_visible(page, self.selectors.stop_controls):
+                return
+            composer = await self._one_visible(page, self.selectors.prompt_inputs)
+            if composer is None:
+                return
+            actual = self.normalize_query_text(await composer.inner_text())
+            if actual != expected:
+                return
+            await asyncio.sleep(0.25)
+
         if await self.query_exists(page, prompt):
-            return await super().query_delivery_failed(page, prompt)
+            return
+        if self.is_conversation_url(page.url):
+            return
         if await self._any_visible(page, self.selectors.stop_controls):
-            return False
+            return
         composer = await self._one_visible(page, self.selectors.prompt_inputs)
         if composer is None:
-            return False
+            return
         actual = self.normalize_query_text(await composer.inner_text())
-        expected = self.normalize_query_text(prompt)
-        if not actual or actual != expected:
-            return False
-        return await self._one_visible(page, self.selectors.send_controls) is not None
+        if actual != expected:
+            return
+
+        send = await self._unique_visible(page, self.selectors.send_controls, "send control")
+        await send.click()
