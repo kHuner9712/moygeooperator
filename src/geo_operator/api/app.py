@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import sqlite3
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -43,6 +45,10 @@ from geo_operator.websites import WebsiteCrawlerService
 
 class TenantCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+
+
+class TenantDeleteRequest(BaseModel):
+    confirm_name: str = Field(min_length=1, max_length=200)
 
 
 class EvidenceCreate(BaseModel):
@@ -135,8 +141,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     }
 
     def require_tenant(tenant_id: str) -> None:
-        if not database.one("SELECT id FROM tenants WHERE id=?", (tenant_id,)):
+        tenant = database.one("SELECT id,status FROM tenants WHERE id=?", (tenant_id,))
+        if not tenant:
             raise ValueError("Tenant not found")
+        if tenant["status"] != "ACTIVE":
+            raise ValueError("Customer is being deleted")
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard() -> HTMLResponse:
@@ -176,8 +185,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/health")
     def health() -> dict[str, Any]:
         worker = runtime_workers.latest("BROWSER")
-        queue = database.one(
-            """SELECT
+        queue = (
+            database.one(
+                """SELECT
                  COALESCE(SUM(CASE WHEN state NOT IN
                    ('COMPLETED','FAILED','PAUSED','WAIT_HUMAN_APPROVAL') THEN 1 ELSE 0 END),0)
                    AS queued,
@@ -188,7 +198,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                  COALESCE(SUM(CASE WHEN state='FAILED' THEN 1 ELSE 0 END),0)
                    AS failed
                FROM executions"""
-        ) or {}
+            )
+            or {}
+        )
         return {
             "status": "ok" if worker["available"] else "degraded",
             "control_service": "ok",
@@ -207,6 +219,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/tenants", status_code=201)
     def create_tenant(body: TenantCreate) -> dict[str, object]:
         return tenants.create(body.name)
+
+    @app.delete("/api/tenants/{tenant_id}")
+    async def delete_tenant(tenant_id: str, body: TenantDeleteRequest) -> dict[str, Any]:
+        try:
+            tenant = tenants.get(tenant_id)
+            if body.confirm_name.strip() != tenant["name"]:
+                raise ValueError("Customer name confirmation does not match")
+            manual_logins.ensure_tenant_closed(tenant_id)
+            tenants.begin_delete(tenant_id, body.confirm_name)
+            await sessions.close_tenant(tenant_id)
+
+            deadline = time.monotonic() + 35.0
+            session_deadline = time.monotonic() + 5.0
+            while tenants.has_active_leases(tenant_id) or (
+                tenants.has_open_sessions(tenant_id) and time.monotonic() < session_deadline
+            ):
+                leases.release_expired()
+                if time.monotonic() >= deadline:
+                    raise ValueError(
+                        "Browser Worker is still stopping this customer; retry deletion shortly"
+                    )
+                await asyncio.sleep(0.1)
+            return tenants.purge(tenant_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="Customer files are still in use; close its browser windows and retry",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/api/approvals")
     def list_approvals() -> list[dict[str, object]]:

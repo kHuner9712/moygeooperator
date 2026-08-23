@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +20,96 @@ class ApiWorkflowTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         self.client.close()
         self.temp.cleanup()
+
+    def test_tenant_delete_requires_exact_name_and_removes_all_project_data(self) -> None:
+        tenant_id = self.tenant["id"]
+        uploaded = self.client.post(
+            f"/api/tenants/{tenant_id}/sources",
+            content=b"delete me",
+            headers={"Content-Type": "text/plain", "X-Filename": "delete-me.txt"},
+        )
+        self.assertEqual(uploaded.status_code, 201)
+
+        profile = self.client.post(
+            f"/api/tenants/{tenant_id}/profile",
+            json={"profile": {"name": "KZQ", "website": "https://example.com"}},
+        ).json()
+        self.assertEqual(
+            self.client.post(
+                f"/api/approvals/{profile['approval_id']}/decision",
+                json={"approved": True, "actor": "tester", "note": ""},
+            ).status_code,
+            200,
+        )
+        package = self.client.post(
+            f"/api/tenants/{tenant_id}/task-packages",
+            content=build_task_package(tenant_id, "delete-package", [make_task(1)]),
+            headers={"Content-Type": "application/zip"},
+        ).json()
+        self.assertEqual(
+            self.client.post(
+                f"/api/approvals/{package['approval_id']}/decision",
+                json={"approved": True, "actor": "tester", "note": ""},
+            ).status_code,
+            200,
+        )
+
+        wrong = self.client.request(
+            "DELETE",
+            f"/api/tenants/{tenant_id}",
+            json={"confirm_name": "not-the-customer"},
+        )
+        self.assertEqual(wrong.status_code, 409)
+
+        artifacts = self.client.app.state.services["artifacts"]
+        tenant_root = artifacts.tenant_root(tenant_id)
+        pid_path = tenant_root / "sessions" / "chatgpt" / "manual" / "manual-login.pid"
+        pid_path.parent.mkdir(parents=True, exist_ok=True)
+        pid_path.write_text(str(os.getpid()), encoding="ascii")
+        occupied = self.client.request(
+            "DELETE",
+            f"/api/tenants/{tenant_id}",
+            json={"confirm_name": self.tenant["name"]},
+        )
+        self.assertEqual(occupied.status_code, 409)
+        self.assertIn("manual login Chrome", occupied.json()["detail"])
+        pid_path.unlink()
+
+        deleted = self.client.request(
+            "DELETE",
+            f"/api/tenants/{tenant_id}",
+            json={"confirm_name": self.tenant["name"]},
+        )
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.json()["status"], "deleted")
+        self.assertFalse(tenant_root.exists())
+        self.assertNotIn(tenant_id, {item["id"] for item in self.client.get("/api/tenants").json()})
+
+        database = self.client.app.state.services["database"]
+        tenant_tables = (
+            "tenants",
+            "approvals",
+            "discovery_evidence",
+            "source_assets",
+            "website_pages",
+            "platform_calibrations",
+            "executions",
+            "execution_events",
+            "side_effects",
+            "response_checkpoints",
+            "results",
+            "artifacts",
+            "exports",
+            "client_profiles",
+            "task_packages",
+            "tasks",
+            "execution_leases",
+            "session_locks",
+            "browser_sessions",
+        )
+        for table in tenant_tables:
+            count = database.one(f"SELECT COUNT(*) AS count FROM {table}")
+            self.assertEqual(count["count"], 0, table)
 
     def test_profile_gate_task_import_approval_and_execution_creation(self) -> None:
         package = self.client.post(
@@ -151,6 +242,11 @@ class ApiWorkflowTestCase(unittest.TestCase):
         self.assertIn("function renderGuide()", html)
         self.assertIn("无法连接本地服务", html)
         self.assertIn('id="runtimeStatus"', html)
+        self.assertIn('id="deleteTenantButton"', html)
+        self.assertIn("async function deleteTenant()", html)
+        self.assertIn("请输入完整客户名称以确认删除", html)
+        self.assertIn("全部项目数据已彻底删除", html)
+        self.assertIn("method:'DELETE'", html)
         self.assertIn("function renderRuntime(health)", html)
         self.assertIn("SECURITY_CHALLENGE:'平台要求安全验证'", html)
         self.assertIn("api('/api/health')", html)

@@ -30,6 +30,7 @@ main{margin:22px auto 50px}.grid{gap:16px;margin-top:18px}
 .workflow-step{background:#f0f3f5;color:#63717c;border-radius:10px;padding:10px 8px;font-size:12px;text-align:center}.workflow-step b{display:block;font-size:14px;color:inherit}
 .workflow-step.done{background:#e0f3e8;color:#17643d}.workflow-step.active{background:#dceef4;color:#175e78;box-shadow:inset 0 0 0 1px #94c5d4}
 .toolbar{grid-template-columns:1.5fr 1fr;gap:16px;border:1px solid #dfe5eb;padding:16px;border-radius:13px;box-shadow:0 2px 8px #2135470a}
+.tenant-picker select{flex:1}.tenant-picker button{flex:0 0 auto;white-space:nowrap}
 .field-label{display:block;color:#526270;font-size:13px;font-weight:700;margin-bottom:6px}.section-title{grid-column:1/-1;margin:14px 0 -3px;font-size:18px;color:#193a4a}
 .section-title span{display:block;font-size:12px;font-weight:400;color:#6a7781;margin-top:2px}
 .card{border-color:#dfe5eb;border-radius:13px;padding:18px;box-shadow:0 2px 10px #2135470a}.card h2,.subcard h2{font-size:16px;margin:0 0 5px}
@@ -70,7 +71,7 @@ textarea{width:100%;resize:vertical}
  <div class="guide"><div id="nextAction" class="next-action"><strong id="nextActionTitle">正在检查下一步</strong><span id="nextActionText">请稍候，系统正在整理当前客户的进度。</span></div><div id="workflowSteps" class="workflow"></div></div>
 </section>
 <section class="toolbar">
- <div><label class="field-label" for="tenantSelect">当前客户</label><select id="tenantSelect" aria-label="选择当前客户"></select></div>
+ <div><label class="field-label" for="tenantSelect">当前客户</label><div class="row tenant-picker"><select id="tenantSelect" aria-label="选择当前客户"></select><button id="deleteTenantButton" class="danger" onclick="deleteTenant()">彻底删除客户</button></div></div>
  <div><label class="field-label" for="tenantName">添加新客户</label><div class="row"><input id="tenantName" placeholder="输入客户名称"><button onclick="createTenant()">创建客户</button></div></div>
 </section>
 <div class="grid">
@@ -159,9 +160,14 @@ function friendlyError(value){
  if(text.includes('INTEGRATION_PAUSED')||text.toLowerCase().includes('integration paused'))return '该平台目前已暂停接入，不能登录、校准或执行任务。';
  if(text.toLowerCase().includes('approval'))return '此操作需要先完成人工确认。请查看“待您确认”区域。';
  if(text.toLowerCase().includes('profile'))return '请先生成并批准客户档案，然后再继续。';
+ if(text.includes('Customer name confirmation'))return '输入的客户名称不一致，删除已取消。';
+ if(text.includes('manual login Chrome'))return '请先关闭该客户所有平台登录窗口，然后再次删除。';
+ if(text.includes('still stopping'))return '浏览器任务仍在安全停止中，请稍候几秒后再次删除。';
+ if(text.includes('files are still in use'))return '该客户的浏览器文件仍被占用，请关闭相关浏览器窗口后再次删除。';
+ if(text.includes('being deleted'))return '该客户正在删除中，不能再写入新数据。';
  return text;
 }
-function syncTenantControls(){const disabled=!tenantId();document.querySelectorAll('.needs-tenant input,.needs-tenant select,.needs-tenant textarea,.needs-tenant button').forEach(element=>{element.disabled=disabled})}
+function syncTenantControls(){const tenant=dashboardData.tenants.find(item=>item.id===tenantId()),disabled=!tenant||tenant.status==='DELETING';document.querySelectorAll('.needs-tenant input,.needs-tenant select,.needs-tenant textarea,.needs-tenant button').forEach(element=>{element.disabled=disabled});byId('deleteTenantButton').disabled=!tenant}
 async function refresh(){
  if(refreshing)return;refreshing=true;
  try{
@@ -177,13 +183,14 @@ async function refresh(){
 }
 function renderTenants(items){
  const select=byId('tenantSelect'),old=select.value||localStorage.getItem('geoTenant')||'';
- select.innerHTML=items.length?items.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join(''):'<option value="">请先创建客户</option>';
+ select.innerHTML=items.length?items.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+(x.status==='DELETING'?'（等待完成删除）':'')+'</option>').join(''):'<option value="">请先创建客户</option>';
  select.disabled=!items.length;
  if(items.some(x=>x.id===old))select.value=old;
  select.onchange=()=>{localStorage.setItem('geoTenant',select.value);refresh()};
 }
 async function refreshTenantData(){
- if(!tenantId()){currentTenantData={sources:[],pages:[],discovery:[],profile:null};renderSources([]);renderWebsitePages([]);renderDiscovery([]);return}
+ const selected=dashboardData.tenants.find(item=>item.id===tenantId());
+ if(!tenantId()||(selected&&selected.status==='DELETING')){currentTenantData={sources:[],pages:[],discovery:[],profile:null};renderSources([]);renderWebsitePages([]);renderDiscovery([]);return}
  const data=await Promise.all([
   api('/api/tenants/'+tenantId()+'/sources'),
   api('/api/tenants/'+tenantId()+'/website-pages'),
@@ -284,7 +291,8 @@ function renderGuide(){
  const packages=dashboardData.packages.filter(item=>item.tenant_id===current);
  const hasMaterial=currentTenantData.sources.length>0||currentTenantData.pages.length>0;
  let active=0,title='先创建客户',text='输入客户名称并点击“创建客户”，然后开始导入资料。',tone='';
- if(tenant&&!hasMaterial){active=1;title='上传客户资料';text='上传客户提供的文件，或者输入官网地址读取公开页面。'}
+ if(tenant&&tenant.status==='DELETING'){title='客户删除尚未完成';text='请关闭该客户仍打开的平台浏览器窗口，然后再次点击“彻底删除客户”。';tone='attention'}
+ else if(tenant&&!hasMaterial){active=1;title='上传客户资料';text='上传客户提供的文件，或者输入官网地址读取公开页面。'}
  else if(tenant&&!currentTenantData.profile){active=1;title='生成客户档案';text='资料准备好后，点击“根据资料生成档案”。'}
  else if(approvals.length){active=2;title='请完成人工确认';text='“待您确认”区域有 '+approvals.length+' 项需要处理，系统会在您批准前保持等待。';tone='attention'}
  else if(tenant&&!packages.length){active=2;title='导入 GEO 任务包';text='选择外部 AI 生成的 ZIP 任务包并导入。'}
@@ -304,6 +312,23 @@ async function exportDiscovery(){try{const r=await api('/api/tenants/'+tenantId(
 function downloadResponse(response,name){response.blob().then(blob=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)})}
 async function createTenant(){try{await api('/api/tenants',{method:'POST',body:JSON.stringify({name:byId('tenantName').value})});byId('tenantName').value='';notify('客户已创建');refresh()}catch(e){notify(e.message,true)}}
 let currentProfileId='';
+async function deleteTenant(){
+ const tenant=dashboardData.tenants.find(item=>item.id===tenantId());
+ if(!tenant)return;
+ if(!confirm('确定要彻底删除客户“'+tenant.name+'”吗？\n\n客户资料、任务、回答结果、审批记录、公开证据和平台 Session 都会永久删除，无法恢复。'))return;
+ const typed=prompt('请输入完整客户名称以确认删除：', '');
+ if(typed===null)return;
+ if(typed!==tenant.name){notify('客户名称不一致，已取消删除',true);return}
+ const button=byId('deleteTenantButton');
+ try{
+  button.disabled=true;notify('正在停止该客户任务并删除全部数据，请不要关闭启动窗口');
+  await api('/api/tenants/'+tenant.id,{method:'DELETE',body:JSON.stringify({confirm_name:typed})});
+  localStorage.removeItem('geoTenant');currentProfileId='';
+  notify('客户“'+tenant.name+'”及其全部项目数据已彻底删除');
+  await refresh();
+ }catch(error){notify(friendlyError(error.message),true)}
+ finally{button.disabled=!tenantId()}
+}
 async function loadProfile(){try{const profile=await api('/api/tenants/'+tenantId()+'/profile');currentProfileId=profile.id;byId('profileJson').value=JSON.stringify(profile.profile,null,2);byId('profileStatus').textContent='当前状态：'+stateText(profile.status)+' · 更新于 '+formatDate(profile.updated_at)}catch(e){byId('profileStatus').textContent='尚未生成客户档案'}}
 async function buildProfile(){try{const saved=await api('/api/tenants/'+tenantId()+'/profile/build',{method:'POST'});currentProfileId=saved.id;byId('profileJson').value=JSON.stringify(saved.profile,null,2);byId('profileStatus').textContent='当前状态：'+stateText(saved.status);notify('客户资料已整理完成，请在“待您确认”区域检查并批准');refresh()}catch(e){notify(friendlyError(e.message),true)}}
 async function saveProfile(){try{let profile;try{profile=JSON.parse(byId('profileJson').value)}catch(error){throw Error('档案内容格式不正确，请检查括号、引号和逗号。')}const saved=await api('/api/tenants/'+tenantId()+'/profile',{method:'POST',body:JSON.stringify({profile})});currentProfileId=saved.id;byId('profileStatus').textContent='当前状态：'+stateText(saved.status);notify('客户档案已保存，请在“待您确认”区域完成确认');refresh()}catch(e){notify(friendlyError(e.message),true)}}

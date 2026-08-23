@@ -7,6 +7,8 @@ from pathlib import Path
 
 from geo_operator.approvals import ApprovalService
 from geo_operator.browser import ExecutionStateMachine
+from geo_operator.browser.lease import ExecutionLeaseManager
+from geo_operator.browser.supervisor import WorkerSupervisor
 from geo_operator.browser.worker import (
     BrowserWorker,
     ExecutionExternallyPaused,
@@ -164,9 +166,7 @@ class CoreTestCase(unittest.TestCase):
             def get(self, execution_id: str) -> dict[str, str]:
                 return {"state": ExecutionState.PAUSED.value}
 
-            def mark_effect_not_attempted(
-                self, effect_id: str, details: dict[str, object]
-            ) -> None:
+            def mark_effect_not_attempted(self, effect_id: str, details: dict[str, object]) -> None:
                 self.not_attempted = details
 
         class NeverSendPlugin:
@@ -194,6 +194,111 @@ class CoreTestCase(unittest.TestCase):
         self.assertEqual(
             worker.engine.not_attempted,
             {"reason": PauseReason.OPERATOR_REQUESTED.value},
+        )
+
+    def test_tenant_purge_waits_for_active_browser_lease(self) -> None:
+        service = TenantService(self.database, self.artifacts)
+        engine = ExecutionStateMachine(self.database)
+        execution = engine.create(self.tenant["id"], "chatgpt", "manual")
+        leases = ExecutionLeaseManager(self.database, ttl_seconds=30)
+
+        with self.assertRaises(ValueError):
+            service.begin_delete(self.tenant["id"], "错误客户名称")
+        self.assertEqual(service.get(self.tenant["id"])["status"], "ACTIVE")
+
+        leases.acquire(execution["id"], "deletion-test-worker")
+        service.begin_delete(self.tenant["id"], self.tenant["name"])
+        with self.assertRaises(ValueError):
+            service.purge(self.tenant["id"])
+        self.assertTrue(self.artifacts.tenant_root(self.tenant["id"]).exists())
+
+        leases.release(execution["id"], "deletion-test-worker")
+        deleted = service.purge(self.tenant["id"])
+        self.assertEqual(deleted["status"], "deleted")
+        self.assertFalse(self.artifacts.tenant_root(self.tenant["id"]).exists())
+        self.assertIsNone(
+            self.database.one("SELECT id FROM tenants WHERE id=?", (self.tenant["id"],))
+        )
+
+    def test_supervisor_closes_idle_sessions_for_deleting_tenant(self) -> None:
+        service = TenantService(self.database, self.artifacts)
+        service.begin_delete(self.tenant["id"], self.tenant["name"])
+        with self.database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO browser_sessions(
+                   id,tenant_id,platform,account_id,status,profile_path,updated_at)
+                   VALUES ('delete-session',?,'chatgpt','manual','OPEN',
+                           'sessions/chatgpt/manual','2026-01-01T00:00:00Z')""",
+                (self.tenant["id"],),
+            )
+
+        class SessionStub:
+            def __init__(self, database: Database) -> None:
+                self.database = database
+                self.closed: list[str] = []
+
+            async def close_tenant(self, tenant_id: str) -> None:
+                self.closed.append(tenant_id)
+                with self.database.transaction() as connection:
+                    connection.execute(
+                        """UPDATE browser_sessions SET status='CLOSED'
+                           WHERE tenant_id=?""",
+                        (tenant_id,),
+                    )
+
+        sessions = SessionStub(self.database)
+        supervisor = WorkerSupervisor(
+            self.database,
+            sessions,
+            ExecutionStateMachine(self.database),
+            ExecutionLeaseManager(self.database),
+            None,
+            None,
+        )
+        self.assertTrue(service.has_open_sessions(self.tenant["id"]))
+        asyncio.run(supervisor._close_inactive_tenant_sessions())
+        self.assertEqual(sessions.closed, [self.tenant["id"]])
+        self.assertFalse(service.has_open_sessions(self.tenant["id"]))
+
+    def test_worker_closes_tenant_session_before_releasing_deletion_lease(self) -> None:
+        class SessionStub:
+            def __init__(self) -> None:
+                self.closed: list[tuple[str, str, str]] = []
+
+            async def close(self, tenant_id: str, platform: str, account_id: str) -> None:
+                self.closed.append((tenant_id, platform, account_id))
+
+        engine = ExecutionStateMachine(self.database)
+        execution = engine.create(self.tenant["id"], "chatgpt", "manual")
+        TenantService(self.database, self.artifacts).begin_delete(
+            self.tenant["id"], self.tenant["name"]
+        )
+        sessions = SessionStub()
+        leases = ExecutionLeaseManager(self.database, ttl_seconds=30)
+        worker = BrowserWorker(
+            self.database,
+            sessions,
+            engine,
+            leases,
+            None,
+            WorkerConfig(),
+            worker_id="tenant-delete-worker",
+        )
+
+        async def interrupted() -> dict[str, object]:
+            raise ExecutionExternallyPaused("tenant deletion requested")
+
+        with self.assertRaises(ExecutionExternallyPaused):
+            asyncio.run(worker._run_with_lease(execution["id"], interrupted))
+        self.assertEqual(
+            sessions.closed,
+            [(self.tenant["id"], "chatgpt", "manual")],
+        )
+        self.assertIsNone(
+            self.database.one(
+                "SELECT execution_id FROM execution_leases WHERE execution_id=?",
+                (execution["id"],),
+            )
         )
 
     def test_browser_action_delay_configuration_is_validated(self) -> None:

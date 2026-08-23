@@ -62,9 +62,7 @@ class ManualLoginLauncher:
         pid_path = profile / "manual-login.pid"
         persisted_pid = self._read_pid(pid_path)
         if persisted_pid is not None and self._pid_is_running(persisted_pid):
-            self._record(
-                tenant_id, platform, account_id, "MANUAL_LOGIN_OPEN", profile_relative
-            )
+            self._record(tenant_id, platform, account_id, "MANUAL_LOGIN_OPEN", profile_relative)
             return
         pid_path.unlink(missing_ok=True)
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
@@ -111,6 +109,27 @@ class ManualLoginLauncher:
             f"sessions/{platform}/{account_id}",
         )
 
+    def ensure_tenant_closed(self, tenant_id: str) -> None:
+        for key, process in tuple(self._open.items()):
+            if key[0] != tenant_id:
+                continue
+            if process.poll() is None:
+                raise ValueError(
+                    "Close all manual login Chrome windows for this customer before deletion"
+                )
+            self._open.pop(key, None)
+
+        sessions_root = self.artifacts.tenant_root(tenant_id) / "sessions"
+        if not sessions_root.exists():
+            return
+        for pid_path in sessions_root.rglob("manual-login.pid"):
+            persisted_pid = self._read_pid(pid_path)
+            if persisted_pid is not None and self._pid_is_running(persisted_pid):
+                raise ValueError(
+                    "Close all manual login Chrome windows for this customer before deletion"
+                )
+            pid_path.unlink(missing_ok=True)
+
     @staticmethod
     def _read_pid(path: Path) -> int | None:
         try:
@@ -132,9 +151,7 @@ class ManualLoginLauncher:
             try:
                 exit_code = ctypes.c_ulong()
                 return bool(
-                    ctypes.windll.kernel32.GetExitCodeProcess(
-                        handle, ctypes.byref(exit_code)
-                    )
+                    ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
                     and exit_code.value == still_active
                 )
             finally:
@@ -253,6 +270,11 @@ class BrowserSessionManager:
                        WHERE tenant_id=? AND platform=? AND account_id=?""",
                     (utc_now(), tenant_id, platform, account_id),
                 )
+
+    async def close_tenant(self, tenant_id: str) -> None:
+        for current_tenant, platform, account_id in tuple(self._open):
+            if current_tenant == tenant_id:
+                await self.close(current_tenant, platform, account_id)
 
     async def close_all(self) -> None:
         for tenant_id, platform, account_id in tuple(self._open):

@@ -38,9 +38,11 @@ class WorkerSupervisor:
 
     async def run_once(self) -> bool:
         self.leases.release_expired()
+        await self._close_inactive_tenant_sessions()
         execution = self.database.one(
             """SELECT e.* FROM executions e
                JOIN task_packages p ON p.id=e.task_package_id
+               JOIN tenants tenant ON tenant.id=e.tenant_id AND tenant.status='ACTIVE'
                JOIN tasks current_task ON current_task.id=e.task_id
                LEFT JOIN execution_leases l ON l.execution_id=e.id
                WHERE p.status='APPROVED'
@@ -117,6 +119,11 @@ class WorkerSupervisor:
         except LeaseUnavailable:
             return False
         except Exception as exc:  # noqa: BLE001 - browser failures must fail closed
+            tenant = self.database.one(
+                "SELECT status FROM tenants WHERE id=?", (execution["tenant_id"],)
+            )
+            if not tenant or tenant["status"] != "ACTIVE":
+                return True
             current = self.engine.get(str(execution["id"]))
             if current["state"] == "PAUSED":
                 if current["pause_reason"] != PauseReason.OPERATOR_REQUESTED.value:
@@ -132,6 +139,11 @@ class WorkerSupervisor:
                     details={"error": type(exc).__name__, "message": str(exc)},
                 )
         return True
+
+    async def _close_inactive_tenant_sessions(self) -> None:
+        tenants = self.database.all("SELECT id FROM tenants WHERE status!='ACTIVE'")
+        for tenant in tenants:
+            await self.sessions.close_tenant(str(tenant["id"]))
 
     async def run_forever(self, idle_seconds: float = 1.0) -> None:
         self.runtime.register(

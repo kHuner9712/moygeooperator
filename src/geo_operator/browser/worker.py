@@ -128,6 +128,16 @@ class BrowserWorker:
                     raise RuntimeError("Execution lease heartbeat stopped unexpectedly")
                 raise error
             return await operation_task
+        except ExecutionExternallyPaused:
+            execution = self.engine.get(execution_id)
+            tenant = self.database.one(
+                "SELECT status FROM tenants WHERE id=?", (execution["tenant_id"],)
+            )
+            if not tenant or tenant["status"] != "ACTIVE":
+                await self.sessions.close(
+                    execution["tenant_id"], execution["platform"], execution["account_id"]
+                )
+            raise
         finally:
             for task in (operation_task, heartbeat_task):
                 if not task.done():
@@ -161,8 +171,10 @@ class BrowserWorker:
             self.leases.heartbeat(execution_id, self.worker_id)
             execution = self.engine.get(execution_id)
             state = ExecutionState(execution["state"])
+            self._raise_if_tenant_inactive(execution)
             if state in {ExecutionState.COMPLETED, ExecutionState.FAILED, ExecutionState.PAUSED}:
                 return execution
+            self._raise_if_paused(execution_id)
 
             task = self._task(execution)
             str(task["prompt"])
@@ -343,7 +355,10 @@ class BrowserWorker:
                     execution_id, plugin, page, str(task["prompt"])
                 )
             except ExecutionExternallyPaused:
-                return self.engine.get(execution_id)
+                current = self.engine.get(execution_id)
+                if current["state"] == ExecutionState.PAUSED.value:
+                    return current
+                raise
             except Exception as exc:  # noqa: BLE001 - uncertain send must pause
                 return await self._pause(
                     execution_id,
@@ -393,7 +408,14 @@ class BrowserWorker:
             await self._pace_before_query(execution_id)
         except ExecutionExternallyPaused:
             self.engine.mark_effect_not_attempted(
-                str(effect["id"]), {"reason": PauseReason.OPERATOR_REQUESTED.value}
+                str(effect["id"]),
+                {
+                    "reason": (
+                        PauseReason.OPERATOR_REQUESTED.value
+                        if self.engine.get(execution_id)["state"] == ExecutionState.PAUSED.value
+                        else "TENANT_DELETING"
+                    )
+                },
             )
             raise
         self._raise_if_paused(execution_id)
@@ -424,7 +446,10 @@ class BrowserWorker:
                 execution_id, plugin, page, str(task["prompt"])
             )
         except ExecutionExternallyPaused:
-            return self.engine.get(execution_id)
+            current = self.engine.get(execution_id)
+            if current["state"] == ExecutionState.PAUSED.value:
+                return current
+            raise
         except Exception as exc:  # noqa: BLE001 - sent query must not be repeated
             return await self._pause(
                 execution_id,
@@ -560,7 +585,9 @@ class BrowserWorker:
         await self._pause(str(execution["id"]), PauseReason.COMPLETION_UNCERTAIN.value, page.url)
         return None
 
-    async def _wait_for_delete_confirmation(self, execution_id: str, plugin: Any, page: Any) -> bool:
+    async def _wait_for_delete_confirmation(
+        self, execution_id: str, plugin: Any, page: Any
+    ) -> bool:
         """Wait boundedly for both DOM absence and a usable signed-in page."""
         started = time.monotonic()
         while time.monotonic() - started < self.config.delete_confirmation_timeout:
@@ -688,7 +715,9 @@ class BrowserWorker:
             if callable(wait_for_hydration):
                 hydration = await wait_for_hydration(page)
                 if hydration != "CONVERSATION_CONTENT":
-                    if pending_delete and await self._wait_for_delete_confirmation(execution_id, plugin, page):
+                    if pending_delete and await self._wait_for_delete_confirmation(
+                        execution_id, plugin, page
+                    ):
                         return
                     absence_check = getattr(plugin, "deletion_absence_confirmed", None)
                     if (
@@ -738,6 +767,14 @@ class BrowserWorker:
             raise ExecutionExternallyPaused(
                 f"Execution {execution_id} was paused outside the active worker"
             )
+        self._raise_if_tenant_inactive(execution)
+
+    def _raise_if_tenant_inactive(self, execution: dict[str, Any]) -> None:
+        tenant = self.database.one(
+            "SELECT status FROM tenants WHERE id=?", (execution["tenant_id"],)
+        )
+        if not tenant or tenant["status"] != "ACTIVE":
+            raise ExecutionExternallyPaused(f"Tenant {execution['tenant_id']} is not active")
 
     def _approval(self, execution: dict[str, Any]) -> dict[str, Any]:
         row = self.database.one(

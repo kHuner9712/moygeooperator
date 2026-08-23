@@ -33,9 +33,17 @@ class ArtifactStore:
     def initialize_tenant(self, tenant_id: str) -> Path:
         root = self.tenant_root(tenant_id)
         for name in (
-            "source", "source/extracted", "website/text", "profile",
-            "discovery/text", "discovery/screenshots", "tasks",
-            "results/checkpoints", "results/screenshots", "exports", "sessions",
+            "source",
+            "source/extracted",
+            "website/text",
+            "profile",
+            "discovery/text",
+            "discovery/screenshots",
+            "tasks",
+            "results/checkpoints",
+            "results/screenshots",
+            "exports",
+            "sessions",
         ):
             (root / name).mkdir(parents=True, exist_ok=True)
         return root
@@ -47,7 +55,15 @@ class ArtifactStore:
             raise ValueError("Artifact path escapes tenant root")
         return path
 
+    def _assert_writable_tenant(self, tenant_id: str) -> None:
+        if self.database is None:
+            return
+        tenant = self.database.one("SELECT status FROM tenants WHERE id=?", (tenant_id,))
+        if not tenant or tenant["status"] != "ACTIVE":
+            raise ValueError("Customer is being deleted")
+
     def atomic_write(self, tenant_id: str, relative_path: str, content: bytes) -> tuple[Path, str]:
+        self._assert_writable_tenant(tenant_id)
         target = self.resolve(tenant_id, relative_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
@@ -68,6 +84,7 @@ class ArtifactStore:
         return target, digest
 
     def record_existing(self, tenant_id: str, relative_path: str) -> str:
+        self._assert_writable_tenant(tenant_id)
         path = self.resolve(tenant_id, relative_path)
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         self.record(tenant_id, relative_path, digest, path.stat().st_size)
@@ -79,6 +96,12 @@ class ArtifactStore:
         artifact_type = relative_path.split("/", 1)[0].upper()
         media_type = mimetypes.guess_type(relative_path)[0] or "application/octet-stream"
         with self.database.transaction() as connection:
+            tenant = connection.execute(
+                "SELECT status FROM tenants WHERE id=?", (tenant_id,)
+            ).fetchone()
+            if not tenant or tenant["status"] != "ACTIVE":
+                raise ValueError("Customer is being deleted")
+
             connection.execute(
                 """INSERT INTO artifacts(
                    id,tenant_id,artifact_type,relative_path,sha256,size,media_type,created_at)
@@ -88,7 +111,13 @@ class ArtifactStore:
                    size=excluded.size,media_type=excluded.media_type,
                    created_at=excluded.created_at""",
                 (
-                    uuid.uuid4().hex, tenant_id, artifact_type, relative_path,
-                    digest, size, media_type, utc_now(),
+                    uuid.uuid4().hex,
+                    tenant_id,
+                    artifact_type,
+                    relative_path,
+                    digest,
+                    size,
+                    media_type,
+                    utc_now(),
                 ),
             )

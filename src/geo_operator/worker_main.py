@@ -16,10 +16,8 @@ def main() -> None:
     settings = Settings.from_env()
     database = Database(settings.database_path)
     database.initialize()
-    artifacts = ArtifactStore(settings.data_root)
-    sessions = BrowserSessionManager(
-        artifacts, database, browser_channel=settings.browser_channel
-    )
+    artifacts = ArtifactStore(settings.data_root, database)
+    sessions = BrowserSessionManager(artifacts, database, browser_channel=settings.browser_channel)
     supervisor = WorkerSupervisor(
         database,
         sessions,

@@ -21,8 +21,19 @@ from geo_operator.core.time import utc_now
 class SourceIngestionService:
     MAX_BYTES = 50 * 1024 * 1024
     ALLOWED_EXTENSIONS: ClassVar[set[str]] = {
-        ".txt", ".md", ".csv", ".json", ".pdf", ".docx",
-        ".xlsx", ".xlsm", ".png", ".jpg", ".jpeg", ".webp", ".gif",
+        ".txt",
+        ".md",
+        ".csv",
+        ".json",
+        ".pdf",
+        ".docx",
+        ".xlsx",
+        ".xlsm",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".gif",
     }
 
     def __init__(self, database: Database, artifacts: ArtifactStore) -> None:
@@ -35,7 +46,9 @@ class SourceIngestionService:
         content: bytes,
         media_type: str | None = None,
     ) -> dict[str, Any]:
-        if not self.database.one("SELECT id FROM tenants WHERE id=?", (tenant_id,)):
+        if not self.database.one(
+            "SELECT id FROM tenants WHERE id=? AND status='ACTIVE'", (tenant_id,)
+        ):
             raise KeyError("Tenant not found")
         if not content:
             raise ValueError("Source file cannot be empty")
@@ -54,7 +67,9 @@ class SourceIngestionService:
             text_relative = f"source/extracted/{asset_id}.txt"
             self.artifacts.atomic_write(tenant_id, text_relative, extracted.encode("utf-8"))
         now = utc_now()
-        resolved_media_type = media_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+        resolved_media_type = (
+            media_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+        )
         with self.database.transaction() as connection:
             connection.execute(
                 """INSERT INTO source_assets(
@@ -62,9 +77,17 @@ class SourceIngestionService:
                    content_sha256,size,extraction_status,metadata_json,created_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (
-                    asset_id, tenant_id, safe_name, resolved_media_type, relative,
-                    text_relative, content_hash, len(content), status,
-                    json.dumps(metadata, ensure_ascii=False), now,
+                    asset_id,
+                    tenant_id,
+                    safe_name,
+                    resolved_media_type,
+                    relative,
+                    text_relative,
+                    content_hash,
+                    len(content),
+                    status,
+                    json.dumps(metadata, ensure_ascii=False),
+                    now,
                 ),
             )
         return self.get(asset_id)

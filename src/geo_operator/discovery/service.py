@@ -71,7 +71,9 @@ class PublicDiscoveryService:
         source_type: str,
         client: httpx.AsyncClient | None = None,
     ) -> dict[str, object]:
-        if not self.database.one("SELECT id FROM tenants WHERE id=?", (tenant_id,)):
+        if not self.database.one(
+            "SELECT id FROM tenants WHERE id=? AND status='ACTIVE'", (tenant_id,)
+        ):
             raise KeyError("Tenant not found")
         source_url = validate_public_url(source_url)
         owns_client = client is None
@@ -104,9 +106,7 @@ class PublicDiscoveryService:
                 if str(node.get("http-equiv", "")).lower() == "refresh":
                     node.decompose()
             screenshot = await self._render_snapshot(str(soup))
-            return self.collect(
-                tenant_id, str(response.url), raw_text, screenshot, source_type
-            )
+            return self.collect(tenant_id, str(response.url), raw_text, screenshot, source_type)
         finally:
             if owns_client:
                 await active_client.aclose()
@@ -114,9 +114,7 @@ class PublicDiscoveryService:
     @staticmethod
     async def _render_snapshot(html: str) -> bytes:
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(
-                headless=True, chromium_sandbox=True
-            )
+            browser = await playwright.chromium.launch(headless=True, chromium_sandbox=True)
             try:
                 page = await browser.new_page(viewport={"width": 1440, "height": 1000})
                 await page.route("**/*", lambda route: route.abort())
@@ -178,16 +176,16 @@ class PublicDiscoveryService:
                         {
                             "path": text_name,
                             "sha256": item["content_sha256"],
-                            "size": self.artifacts.resolve(
-                                tenant_id, str(item["raw_text_path"])
-                            ).stat().st_size,
+                            "size": self.artifacts.resolve(tenant_id, str(item["raw_text_path"]))
+                            .stat()
+                            .st_size,
                         },
                         {
                             "path": shot_name,
                             "sha256": item["screenshot_sha256"],
-                            "size": self.artifacts.resolve(
-                                tenant_id, str(item["screenshot_path"])
-                            ).stat().st_size,
+                            "size": self.artifacts.resolve(tenant_id, str(item["screenshot_path"]))
+                            .stat()
+                            .st_size,
                         },
                     ]
                 index_content = ("\n".join(index) + "\n").encode()

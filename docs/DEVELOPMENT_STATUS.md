@@ -8,7 +8,7 @@
 
 | 模块 | 状态 | 验证边界 |
 |---|---|---|
-| 多租户与文件隔离 | 完成 | SQLite 外键、tenant 路径校验、原子写入 |
+| 多租户、文件隔离与彻底删除 | 完成 | SQLite 外键、tenant 路径校验、原子写入；名称二次确认、DELETING 调度门禁、租约/Session 释放、全表事务清理和租户目录删除 |
 | Source Ingestion | 完成 | TXT/MD/CSV/JSON、PDF、DOCX、XLSX/XLSM、常见图片 |
 | 官网抓取 | 完成 | 公网地址校验、同源、重定向复核、页数/体积/超时上限、失败留痕 |
 | Client Profile Builder | 完成 | 只对上传资料与官网页面生成机械索引；不包含 Public Discovery；生成后等待人工审批 |

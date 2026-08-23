@@ -149,7 +149,9 @@ class TaskPackageService:
         return self.database.all("SELECT * FROM task_packages ORDER BY imported_at DESC")
 
     def _assert_tenant(self, tenant_id: str) -> None:
-        if not self.database.one("SELECT id FROM tenants WHERE id=?", (tenant_id,)):
+        if not self.database.one(
+            "SELECT id FROM tenants WHERE id=? AND status='ACTIVE'", (tenant_id,)
+        ):
             raise KeyError("Tenant not found")
 
     @staticmethod

@@ -47,7 +47,9 @@ class WebsiteCrawlerService:
         max_pages: int = 20,
         client: httpx.AsyncClient | None = None,
     ) -> dict[str, Any]:
-        if not self.database.one("SELECT id FROM tenants WHERE id=?", (tenant_id,)):
+        if not self.database.one(
+            "SELECT id FROM tenants WHERE id=? AND status='ACTIVE'", (tenant_id,)
+        ):
             raise KeyError("Tenant not found")
         start_url = validate_public_url(start_url)
         if not 1 <= max_pages <= self.MAX_PAGES:
@@ -93,7 +95,8 @@ class WebsiteCrawlerService:
         if crawl_id:
             return self.database.all(
                 """SELECT * FROM website_pages WHERE tenant_id=? AND crawl_id=?
-                   ORDER BY captured_at,id""", (tenant_id, crawl_id)
+                   ORDER BY captured_at,id""",
+                (tenant_id, crawl_id),
             )
         return self.database.all(
             "SELECT * FROM website_pages WHERE tenant_id=? ORDER BY captured_at,id", (tenant_id,)
@@ -120,7 +123,9 @@ class WebsiteCrawlerService:
             links = self._links(soup, str(response.url))
             for node in soup(["script", "style", "noscript", "template"]):
                 node.decompose()
-            text = "\n".join(line.strip() for line in soup.get_text("\n").splitlines() if line.strip())
+            text = "\n".join(
+                line.strip() for line in soup.get_text("\n").splitlines() if line.strip()
+            )
             text_bytes = text.encode("utf-8")
             text_path = f"website/text/{page_id}.txt"
             self.artifacts.atomic_write(tenant_id, text_path, text_bytes)
@@ -136,8 +141,19 @@ class WebsiteCrawlerService:
                    id,tenant_id,crawl_id,source_url,final_url,title,text_path,
                    content_sha256,status,error,captured_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                (page_id, tenant_id, crawl_id, url, final_url, title, text_path,
-                 content_hash, status, error, captured_at),
+                (
+                    page_id,
+                    tenant_id,
+                    crawl_id,
+                    url,
+                    final_url,
+                    title,
+                    text_path,
+                    content_hash,
+                    status,
+                    error,
+                    captured_at,
+                ),
             )
         return {"id": page_id, "status": status, "links": links}
 
