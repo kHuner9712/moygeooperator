@@ -135,18 +135,83 @@ class TaskPackageService:
         row = self.database.one("SELECT * FROM task_packages WHERE id=?", (package_id,))
         if not row:
             raise KeyError("Task package not found")
-        row["tasks"] = self.database.all(
+        tasks = self.database.all(
             "SELECT * FROM tasks WHERE task_package_id=? ORDER BY sequence", (package_id,)
         )
+        row["tasks"] = tasks
+        self._attach_platform_selection(row, tasks)
         return row
 
     def list(self, tenant_id: str | None = None) -> list[dict[str, Any]]:
         if tenant_id:
-            return self.database.all(
+            rows = self.database.all(
                 "SELECT * FROM task_packages WHERE tenant_id=? ORDER BY imported_at DESC",
                 (tenant_id,),
             )
-        return self.database.all("SELECT * FROM task_packages ORDER BY imported_at DESC")
+        else:
+            rows = self.database.all("SELECT * FROM task_packages ORDER BY imported_at DESC")
+        for row in rows:
+            tasks = self.database.all(
+                "SELECT platform,status FROM tasks WHERE task_package_id=? ORDER BY sequence",
+                (row["id"],),
+            )
+            self._attach_platform_selection(row, tasks)
+        return rows
+
+    def set_platform_selection(self, package_id: str, platforms: list[str]) -> dict[str, Any]:
+        package = self.database.one("SELECT * FROM task_packages WHERE id=?", (package_id,))
+        if not package:
+            raise KeyError("Task package not found")
+        if package["status"] != "WAIT_HUMAN_APPROVAL":
+            raise ValueError("Detection platforms can only be changed before task approval")
+
+        tasks = self.database.all(
+            "SELECT id,platform FROM tasks WHERE task_package_id=? ORDER BY sequence",
+            (package_id,),
+        )
+        available = {str(task["platform"]) for task in tasks}
+        selected: list[str] = []
+        for platform in platforms:
+            canonical = canonical_platform(platform)
+            if canonical not in SUPPORTED_PLATFORMS:
+                raise ValueError(f"Unsupported task platform: {canonical}")
+            if canonical not in available:
+                raise ValueError(f"Platform is not present in this task package: {canonical}")
+            if canonical not in selected:
+                selected.append(canonical)
+        if not selected:
+            raise ValueError("Select at least one detection platform")
+
+        selected_set = set(selected)
+        with self.database.transaction() as connection:
+            for task in tasks:
+                connection.execute(
+                    "UPDATE tasks SET status=? WHERE id=?",
+                    ("PENDING" if task["platform"] in selected_set else "SKIPPED", task["id"]),
+                )
+        return self.get(package_id)
+
+    def execution_tasks(self, package_id: str) -> list[dict[str, Any]]:
+        return self.database.all(
+            """SELECT * FROM tasks WHERE task_package_id=? AND status!='SKIPPED'
+               ORDER BY sequence""",
+            (package_id,),
+        )
+
+    @staticmethod
+    def _attach_platform_selection(
+        package: dict[str, Any], tasks: list[dict[str, Any]]
+    ) -> None:
+        platforms = list(dict.fromkeys(str(task["platform"]) for task in tasks))
+        selected = list(
+            dict.fromkeys(
+                str(task["platform"])
+                for task in tasks
+                if str(task.get("status") or "PENDING") != "SKIPPED"
+            )
+        )
+        package["platforms"] = platforms
+        package["selected_platforms"] = selected
 
     def _assert_tenant(self, tenant_id: str) -> None:
         if not self.database.one(
