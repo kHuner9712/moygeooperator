@@ -16,20 +16,52 @@ from geo_operator.core.storage import ArtifactStore
 from geo_operator.core.time import utc_now
 
 
+_PROXY_FAKE_IPV4_NETWORK = ipaddress.ip_network("198.18.0.0/15")
+
+
+def _is_proxy_fake_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Return whether an address is a proxy fake-IP placeholder rather than a real target."""
+    if isinstance(ip, ipaddress.IPv6Address):
+        mapped = ip.ipv4_mapped
+        if mapped is None:
+            return False
+        ip = mapped
+    return ip in _PROXY_FAKE_IPV4_NETWORK
+
+
 def validate_public_url(url: str) -> str:
     parsed = urlsplit(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("URL must be an absolute HTTP(S) URL")
     if parsed.username or parsed.password:
         raise ValueError("URL credentials are not allowed")
+
+    # Reject non-public literal IP URLs unconditionally. This keeps direct access to
+    # localhost/private/link-local/reserved targets blocked even when a proxy is present.
+    try:
+        literal_ip = ipaddress.ip_address(parsed.hostname)
+    except ValueError:
+        literal_ip = None
+    if literal_ip is not None:
+        if not literal_ip.is_global:
+            raise ValueError("Private, local, reserved, or non-global addresses are not allowed")
+        return urlunsplit(parsed._replace(fragment=""))
+
     try:
         addresses = {item[4][0] for item in socket.getaddrinfo(parsed.hostname, parsed.port)}
     except OSError as exc:
         raise ValueError("URL hostname could not be resolved") from exc
     for address in addresses:
         ip = ipaddress.ip_address(address)
-        if not ip.is_global:
-            raise ValueError("Private, local, reserved, or non-global addresses are not allowed")
+        if ip.is_global:
+            continue
+        # Clash/Mihomo fake-IP mode commonly maps ordinary public hostnames into the
+        # RFC 2544 benchmarking range. The local proxy intercepts these placeholders
+        # and forwards the request to the real public destination. Only permit this
+        # exception for DNS results; a literal 198.18.0.0/15 URL remains blocked above.
+        if _is_proxy_fake_ip(ip):
+            continue
+        raise ValueError("Private, local, reserved, or non-global addresses are not allowed")
     return urlunsplit(parsed._replace(fragment=""))
 
 
