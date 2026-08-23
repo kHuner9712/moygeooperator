@@ -63,6 +63,14 @@ class ResultPackageService:
         )
         if not rows or len(rows) != int(expected["count"]):
             raise ValueError("Result set is incomplete")
+        interrupted = self.database.all(
+            """SELECT e.id AS execution_id,e.created_at AS started_at,
+                      e.updated_at AS stopped_at,t.external_task_id,t.prompt,t.platform,t.sequence
+               FROM executions e JOIN tasks t ON t.id=e.task_id
+               WHERE e.task_package_id=? AND e.state='INTERRUPTED'
+               ORDER BY t.sequence""",
+            (task_package_id,),
+        )
 
         tenant_id = str(package["tenant_id"])
         export_id = uuid.uuid4().hex
@@ -126,6 +134,36 @@ class ResultPackageService:
                         event["execution_id"] = row["execution_id"]
                         event["payload"] = json.loads(event.pop("payload_json"))
                         event_lines.append(json.dumps(event, ensure_ascii=False))
+                for row in interrupted:
+                    result_lines.append(
+                        json.dumps(
+                            {
+                                "result_id": None,
+                                "tenant_id": tenant_id,
+                                "task_id": row["external_task_id"],
+                                "execution_id": row["execution_id"],
+                                "platform": row["platform"],
+                                "prompt": row["prompt"],
+                                "response_path": None,
+                                "screenshot_path": None,
+                                "started_at": row["started_at"],
+                                "completed_at": row["stopped_at"],
+                                "completion_signals": {},
+                                "response_sha256": None,
+                                "final_status": "INTERRUPTED",
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    events = self.database.all(
+                        """SELECT sequence,event_type,from_state,to_state,payload_json,created_at
+                           FROM execution_events WHERE execution_id=? ORDER BY sequence""",
+                        (row["execution_id"],),
+                    )
+                    for event in events:
+                        event["execution_id"] = row["execution_id"]
+                        event["payload"] = json.loads(event.pop("payload_json"))
+                        event_lines.append(json.dumps(event, ensure_ascii=False))
                 results_content = ("\n".join(result_lines) + "\n").encode()
                 events_content = ("\n".join(event_lines) + "\n").encode()
                 archive.writestr("results.jsonl", results_content)
@@ -151,6 +189,7 @@ class ResultPackageService:
                     "source_task_package_id": package["package_id"],
                     "export_id": export_id,
                     "created_at": utc_now(),
+                    "interrupted_platforms": [row["platform"] for row in interrupted],
                     "files": files,
                 }
                 archive.writestr(

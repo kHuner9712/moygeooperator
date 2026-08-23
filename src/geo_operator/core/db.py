@@ -179,6 +179,10 @@ class Database:
                 connection, "client_profiles", "website_page_ids_json",
                 "TEXT NOT NULL DEFAULT '[]'",
             )
+            self._ensure_column(
+                connection, "task_packages", "platform_selection_json",
+                "TEXT NOT NULL DEFAULT '[]'",
+            )
             connection.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_execution_task "
                 "ON executions(task_id) WHERE task_id IS NOT NULL"

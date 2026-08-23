@@ -24,8 +24,9 @@ ALLOWED = {
     ExecutionState.COMPLETED: set(),
     ExecutionState.PAUSED: set(),
     ExecutionState.FAILED: set(),
+    ExecutionState.INTERRUPTED: set(),
 }
-TERMINAL = {ExecutionState.COMPLETED, ExecutionState.FAILED}
+TERMINAL = {ExecutionState.COMPLETED, ExecutionState.FAILED, ExecutionState.INTERRUPTED}
 
 
 class ExecutionStateMachine:
@@ -171,6 +172,33 @@ class ExecutionStateMachine:
                 current,
                 ExecutionState.PAUSED,
                 {"reason": reason.value, **(details or {})},
+            )
+        return self.get(execution_id)
+
+    def interrupt(self, execution_id: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
+        """End an execution regardless of completion; used to roll back a package early."""
+        with self.database.transaction() as connection:
+            row = self._get(connection, execution_id)
+            current = ExecutionState(row["state"])
+            if current in TERMINAL:
+                raise ValueError("Execution is already finished")
+            connection.execute(
+                """UPDATE executions SET state=?,resume_state=NULL,paused_from_state=NULL,
+                   pause_reason=NULL,version=version+1,updated_at=? WHERE id=? AND version=?""",
+                (
+                    ExecutionState.INTERRUPTED.value,
+                    utc_now(),
+                    execution_id,
+                    row["version"],
+                ),
+            )
+            self._event(
+                connection,
+                execution_id,
+                "EXECUTION_INTERRUPTED",
+                current,
+                ExecutionState.INTERRUPTED,
+                {"rolled_back": True, **(details or {})},
             )
         return self.get(execution_id)
 

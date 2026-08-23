@@ -23,6 +23,7 @@ class ExecutionState(StrEnum):
     COMPLETED = "COMPLETED"
     PAUSED = "PAUSED"
     FAILED = "FAILED"
+    INTERRUPTED = "INTERRUPTED"
 
 
 class PauseReason(StrEnum):

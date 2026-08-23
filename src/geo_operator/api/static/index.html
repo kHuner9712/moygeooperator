@@ -107,6 +107,7 @@ textarea{width:100%;resize:vertical}
   <div class="metric success"><b id="completedCount">0</b><span class="muted">已经完成</span></div>
   <div class="metric attention"><b id="pausedCount">0</b><span class="muted">需要处理</span></div>
   <div class="metric"><b id="failedCount">0</b><span class="muted">执行失败</span></div>
+  <div class="metric"><b id="interruptedCount">0</b><span class="muted">已中断退回</span></div>
  </div><div class="progress" aria-label="任务完成进度"><span id="executionProgress" style="width:0"></span></div><div class="execution-tools"><span id="progressText" class="card-note" style="margin:8px 0 0">尚无任务</span><select id="executionFilter" aria-label="筛选任务" onchange="renderExecutions(lastExecutions)"><option value="ALL">显示全部任务</option><option value="ATTENTION">只看需要处理</option><option value="RUNNING">只看运行中</option><option value="COMPLETED">只看已完成</option></select></div><div id="executions" class="list"></div></section>
  <section class="card full package-card needs-tenant"><h2>任务包与结果导出</h2><p class="card-note">先导入外部 AI 生成的任务包。批准执行前可选择本轮检测平台；所有已选任务完成后，再申请结果导出确认并下载结果。</p><div class="row"><input id="taskFile" aria-label="选择 GEO 任务包" type="file" accept=".zip"><button onclick="importTasks()">导入任务包</button></div><div id="packages" class="list" style="margin-top:14px"></div></section>
 </div>
@@ -132,7 +133,7 @@ const STATE_TEXT={
  CREATED:'等待开始',WAIT_LOGIN:'检查登录状态',READY:'准备执行',WAIT_HUMAN_APPROVAL:'等待人工确认',
  OPEN_PLATFORM:'正在打开平台',SEND_QUERY:'正在发送问题',WAIT_RESPONSE:'等待平台回答',
  VERIFY_COMPLETE:'核对回答完整性',SAVE_RESULT:'正在保存结果',DELETE_CHAT:'正在清理临时会话',
- VERIFY_DELETE:'确认会话已清理',NEXT_TASK:'准备下一项任务',COMPLETED:'已完成',PAUSED:'需要人工处理',FAILED:'执行失败'
+ VERIFY_DELETE:'确认会话已清理',NEXT_TASK:'准备下一项任务',COMPLETED:'已完成',PAUSED:'需要人工处理',FAILED:'执行失败',INTERRUPTED:'已中断退回'
 };
 const APPROVAL_TEXT={CLIENT_PROFILE_REVIEW:'确认客户档案',TASK_EXECUTION:'确认执行任务',RESULT_EXPORT:'确认导出结果'};
 const STATUS_TEXT={PENDING:'等待确认',SKIPPED:'本轮不检测',APPROVED:'已批准',REJECTED:'已拒绝',DRAFT:'草稿',IMPORTED:'已导入',EXTRACTED:'内容提取完成',STORED_NO_TEXT:'原文件已保存',EXECUTION_READY:'可以执行',CALIBRATION_REQUIRED:'需要完成首次配置',INTEGRATION_PAUSED:'已暂停接入',AI_PENDING:'等待外部 AI 分析',COLLECTED:'读取成功',FAILED:'失败',READY:'可用',IN_USE:'使用中',NEEDS_HUMAN:'需要人工处理',INVALID:'不可用'};
@@ -148,7 +149,7 @@ function platformText(value){return PLATFORM_TEXT[String(value).toLowerCase()]||
 function stateClass(value){
  if(value==='COMPLETED'||value==='APPROVED'||value==='EXECUTION_READY')return 'COMPLETED';
  if(value==='PAUSED'||value==='WAIT_HUMAN_APPROVAL'||value==='PENDING'||value==='CALIBRATION_REQUIRED'||value==='INTEGRATION_PAUSED')return 'PAUSED';
- if(value==='FAILED'||value==='REJECTED')return 'FAILED';
+ if(value==='FAILED'||value==='REJECTED'||value==='INTERRUPTED')return 'FAILED';
  if(['OPEN_PLATFORM','SEND_QUERY','WAIT_RESPONSE','VERIFY_COMPLETE','SAVE_RESULT','DELETE_CHAT','VERIFY_DELETE','NEXT_TASK','READY','WAIT_LOGIN'].includes(value))return 'RUNNING';
  return '';
 }
@@ -230,7 +231,7 @@ function syncExecutionActions(rows){
   let keep;
   if(state==='CREATED')keep=[0,3];
   else if(state==='PAUSED')keep=[2,3,4];
-  else if(state==='FAILED')keep=[3,4];
+  else if(state==='FAILED'||state==='INTERRUPTED')keep=[3,4];
   else if(state==='COMPLETED'||state==='WAIT_HUMAN_APPROVAL')keep=[3];
   else keep=[1,3];
   buttons.forEach((button,buttonIndex)=>{if(!keep.includes(buttonIndex))button.remove()});
@@ -240,10 +241,10 @@ function renderExecutions(items){
  lastExecutions=items;
  const allRows=items.filter(x=>!tenantId()||x.tenant_id===tenantId());
  const filter=byId('executionFilter').value;
- const rows=allRows.filter(x=>filter==='ALL'||(filter==='ATTENTION'&&['PAUSED','FAILED'].includes(x.state))||(filter==='RUNNING'&&!['CREATED','COMPLETED','PAUSED','FAILED','WAIT_HUMAN_APPROVAL'].includes(x.state))||(filter==='COMPLETED'&&x.state==='COMPLETED'));
- const completed=allRows.filter(x=>x.state==='COMPLETED').length,paused=allRows.filter(x=>x.state==='PAUSED').length,failed=allRows.filter(x=>x.state==='FAILED').length;
+ const rows=allRows.filter(x=>filter==='ALL'||(filter==='ATTENTION'&&['PAUSED','FAILED'].includes(x.state))||(filter==='RUNNING'&&!['CREATED','COMPLETED','PAUSED','FAILED','WAIT_HUMAN_APPROVAL','INTERRUPTED'].includes(x.state))||(filter==='COMPLETED'&&x.state==='COMPLETED'));
+ const completed=allRows.filter(x=>x.state==='COMPLETED').length,paused=allRows.filter(x=>x.state==='PAUSED').length,failed=allRows.filter(x=>x.state==='FAILED').length,interrupted=allRows.filter(x=>x.state==='INTERRUPTED').length;
  byId('totalCount').textContent=allRows.length;byId('completedCount').textContent=completed;
- byId('pausedCount').textContent=paused;byId('failedCount').textContent=failed;
+ byId('pausedCount').textContent=paused;byId('failedCount').textContent=failed;byId('interruptedCount').textContent=interrupted;
  const percent=allRows.length?Math.round(completed/allRows.length*100):0;
  byId('executionProgress').style.width=percent+'%';
  byId('progressText').textContent=allRows.length?'已完成 '+completed+' / '+allRows.length+' 项（'+percent+'%）':'导入并批准任务包后，任务会显示在这里';
@@ -258,11 +259,13 @@ function renderPackages(items){
  const rows=items.filter(x=>!tenantId()||x.tenant_id===tenantId());
  byId('packages').innerHTML=rows.length?rows.map(x=>{
   const executions=dashboardData.executions.filter(item=>item.task_package_id===x.id);
-  const allComplete=executions.length>0&&executions.every(item=>item.state==='COMPLETED');
+  const allFinished=executions.length>0&&executions.every(item=>item.state==='COMPLETED'||item.state==='INTERRUPTED');
+  const interruptedCount=executions.filter(item=>item.state==='INTERRUPTED').length;
   const approval=dashboardData.approvals.find(item=>item.stage==='RESULT_EXPORT'&&item.resource_id===x.id);
-  const requestDisabled=!allComplete||Boolean(approval);
+  const requestDisabled=!allFinished||Boolean(approval);
   const exportReady=approval&&approval.status==='APPROVED';
   const editable=x.status==='WAIT_HUMAN_APPROVAL';
+  const interruptible=x.status==='APPROVED'&&executions.length>0&&!allFinished;
   const selected=new Set(x.selected_platforms||[]);
   const platformPicker=editable?'<div class="platform-picker"><div class="platform-picker-title">本轮检测平台</div><div class="platform-options">'+(x.platforms||[]).map(platform=>{
    const support=dashboardData.platforms.find(item=>item.platform===platform);
@@ -271,8 +274,8 @@ function renderPackages(items){
    const detail=blocked?' · '+stateText(support.support_status):'';
    return '<label class="platform-option '+(blocked?'disabled':'')+'"><input class="package-platform-choice" data-package-id="'+esc(x.id)+'" data-platform="'+esc(platform)+'" type="checkbox"'+(checked?' checked':'')+(blocked?' disabled':'')+'><span>'+esc(platformText(platform)+detail)+'</span></label>';
   }).join('')+'</div><div class="actions"><button class="secondary" onclick="savePlatformSelection(\''+x.id+'\')">保存检测平台</button></div><div class="muted" style="margin-top:7px">未勾选的平台本轮不会打开浏览器、不会发送问题，也不会影响结果导出。</div></div>':'<div class="platform-picker"><div class="platform-picker-title">本轮检测平台</div><div class="muted">'+esc((x.selected_platforms||[]).map(platformText).join('、')||'未选择')+'</div></div>';
-  const hint=editable?'请先选择并保存本轮检测平台，然后批准任务执行':!executions.length?'等待任务执行确认':!allComplete?'已选平台任务尚未全部完成':!approval?'可以申请导出确认':approval.status==='PENDING'?'等待您批准结果导出':'结果包可以下载';
-  return '<div class="item"><div class="item-head"><b>'+esc(x.package_id)+'</b><span class="state '+stateClass(x.status)+'">'+esc(stateText(x.status))+'</span></div><div class="card-note">'+esc(hint)+'</div>'+platformPicker+'<div class="actions"><button'+(requestDisabled?' disabled title="已选任务全部完成后才可申请"':'')+' onclick="requestExport(\''+x.id+'\')">申请结果导出确认</button><button class="good"'+(exportReady?'':' disabled title="请先批准结果导出确认"')+' onclick="exportResults(\''+x.id+'\')">下载最终结果包</button></div><details class="technical"><summary>查看任务包信息</summary><div class="technical-content">版本 '+esc(x.schema_version)+' · 导入于 '+esc(formatDate(x.imported_at))+'</div></details></div>';
+  const hint=editable?'请先选择并保存本轮检测平台，然后批准任务执行':!executions.length?'等待任务执行确认':interruptedCount?'已中断退回'+interruptedCount+' 个平台，可以申请导出已完成平台的结果':!allFinished?'已选平台任务尚未全部完成，可以随时中断退回':!approval?'可以申请导出确认':approval.status==='PENDING'?'等待您批准结果导出':'结果包可以下载';
+  return '<div class="item"><div class="item-head"><b>'+esc(x.package_id)+'</b><span class="state '+stateClass(x.status)+'">'+esc(stateText(x.status))+'</span></div><div class="card-note">'+esc(hint)+'</div>'+platformPicker+'<div class="actions"><button'+(requestDisabled?' disabled title="已选任务全部完成后才可申请"':'')+' onclick="requestExport(\''+x.id+'\')">申请结果导出确认</button><button class="good"'+(exportReady?'':' disabled title="请先批准结果导出确认"')+' onclick="exportResults(\''+x.id+'\')">下载最终结果包</button><button class="danger"'+(interruptible?'':' disabled title="全部已完成或尚未开始，无需中断"')+' onclick="interruptTaskPackage(\''+x.id+'\')">中断并退回</button></div><details class="technical"><summary>查看任务包信息</summary><div class="technical-content">版本 '+esc(x.schema_version)+' · 导入于 '+esc(formatDate(x.imported_at))+'</div></details></div>';
  }).join(''):empty('尚未导入任务包，请从上方选择 ZIP 文件');
 }
 function renderSessions(items){const rows=items.filter(x=>!tenantId()||x.tenant_id===tenantId());byId('sessions').innerHTML=rows.length?rows.map(x=>'<div class="item"><div class="item-head"><b>'+esc(platformText(x.platform))+'</b><span class="state '+stateClass(x.status)+'">'+esc(stateText(x.status))+'</span></div><div class="muted">登录身份：'+esc(x.account_id==='manual'?'人工登录账号':x.account_id)+'</div></div>').join(''):empty('当前客户没有打开的平台会话')}
@@ -324,7 +327,7 @@ function renderGuide(){
  else if(tenant&&!packages.length){active=2;title='导入 GEO 任务包';text='选择外部 AI 生成的 ZIP 任务包并导入。'}
  else if(executions.some(item=>['PAUSED','FAILED'].includes(item.state))){active=3;title='有任务需要人工处理';text='请查看橙色任务卡片，按提示完成验证或登录后再继续。';tone='attention'}
  else if(executions.length&&executions.some(item=>item.state!=='COMPLETED')){active=3;title='任务正在执行';text='可以离开本页面，系统会持续保存进度；遇到验证时会自动暂停。'}
- else if(executions.length&&executions.every(item=>item.state==='COMPLETED')){active=4;title='任务已全部完成';text='请申请并批准结果导出确认，然后下载最终结果包。';tone='success'}
+ else if(executions.length&&executions.every(item=>item.state==='COMPLETED'||item.state==='INTERRUPTED')){active=4;title=executions.some(item=>item.state==='INTERRUPTED')?'任务已结束（部分中断退回）':'任务已全部完成';text=executions.some(item=>item.state==='INTERRUPTED')?'未完成平台已中断退回，可以申请导出已完成平台的结果。':'请申请并批准结果导出确认，然后下载最终结果包。';tone='success'}
  else if(packages.length){active=2;title='等待任务执行确认';text='请查看“待您确认”区域，批准后任务才会开始。'}
  const steps=['客户','档案','审批','执行','导出'];
  if(dashboardData.health&&(!dashboardData.health.worker||!dashboardData.health.worker.available)){title='浏览器执行器未连接';text='请关闭并重新打开 GEO Operator 启动窗口。控制台仍可查看数据，但新任务不会执行。';tone='attention'}
@@ -366,6 +369,7 @@ async function checkCalibration(platform){try{const data=await api('/api/session
 async function releaseSession(platform){try{await api('/api/sessions/close',{method:'POST',body:JSON.stringify({tenant_id:tenantId(),platform,account_id:'manual'})});notify(platformText(platform)+' 窗口已关闭并释放');refresh()}catch(e){notify(friendlyError(e.message),true)}}
 async function runExecution(id){try{await api('/api/executions/'+id+'/run',{method:'POST'});notify('任务已加入执行队列，系统会自动保存进度');refresh()}catch(e){notify(friendlyError(e.message),true)}}
 async function pauseExecution(id){try{await api('/api/executions/'+id+'/pause',{method:'POST'});notify('任务已安全暂停');refresh()}catch(e){notify(friendlyError(e.message),true)}}
+async function interruptTaskPackage(id){if(!confirm('确定要中断这个任务包并退回吗？\n\n尚未完成的平台会停止执行，已完成的平台结果会保留，之后可以申请导出结果。'))return;try{await api('/api/task-packages/'+id+'/interrupt',{method:'POST'});notify('任务已中断并退回，可以申请导出已完成平台的结果');refresh()}catch(e){notify(friendlyError(e.message),true)}}
 async function continueExecution(id){if(!confirm('确认验证码、登录或安全验证已经处理完成？系统会先重新检查页面，检查通过后才继续。'))return;try{await api('/api/executions/'+id+'/continue',{method:'POST',body:JSON.stringify({note:'operator completed takeover'})});notify('已提交继续请求，系统正在重新检查页面');refresh()}catch(e){notify(friendlyError(e.message),true)}}
 async function showPauseEvidence(id){try{const evidence=await api('/api/executions/'+id+'/pause-evidence');const image=evidence.screenshot_path?'<img alt="任务暂停时的页面截图" style="max-width:100%;margin-top:8px;border-radius:7px" src="/api/executions/'+id+'/pause-screenshot?ts='+Date.now()+'">':'';byId('cp-'+id).innerHTML='<div class="card-note" style="margin-top:10px">截图时间：'+esc(formatDate(evidence.created_at))+'</div>'+image+'<details class="technical"><summary>查看技术信息</summary><div class="technical-content">'+esc(evidence.page_url||'')+' · '+esc(evidence.calibration_block||'')+' '+esc(evidence.message||'')+'</div></details>'}catch(e){notify(friendlyError(e.message),true)}}async function showCheckpoints(id){try{const rows=await api('/api/executions/'+id+'/checkpoints');byId('cp-'+id).innerHTML=rows.length?'<div class="card-note" style="margin-top:10px">回答已实时保存 '+rows.length+' 次；最近保存于 '+esc(formatDate(rows[0].captured_at))+'</div>':empty('尚未保存到回答内容')}catch(e){notify(friendlyError(e.message),true)}}
 async function requestExport(id){try{await api('/api/task-packages/'+id+'/result-export-approval',{method:'POST'});notify('已创建结果导出确认，请在“待您确认”区域批准');refresh()}catch(e){notify(friendlyError(e.message),true)}}

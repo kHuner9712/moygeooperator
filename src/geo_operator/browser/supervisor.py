@@ -70,7 +70,9 @@ class WorkerSupervisor:
                      )
                  )
                  AND (
-                   e.state NOT IN ('COMPLETED','FAILED','PAUSED','WAIT_HUMAN_APPROVAL')
+                   e.state NOT IN (
+                     'COMPLETED','FAILED','PAUSED','WAIT_HUMAN_APPROVAL','INTERRUPTED'
+                   )
                    OR (
                      e.state='PAUSED' AND (
                        SELECT event_type FROM execution_events
@@ -132,7 +134,7 @@ class WorkerSupervisor:
                         PauseReason.PAGE_ABNORMAL.value,
                         {"error": type(exc).__name__, "message": str(exc)},
                     )
-            elif current["state"] not in {"FAILED", "COMPLETED"}:
+            elif current["state"] not in {"FAILED", "COMPLETED", "INTERRUPTED"}:
                 self.engine.pause(
                     str(execution["id"]),
                     PauseReason.PAGE_ABNORMAL,

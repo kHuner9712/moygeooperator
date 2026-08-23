@@ -415,6 +415,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    @app.post("/api/task-packages/{package_id}/interrupt")
+    def interrupt_task_package(package_id: str) -> dict[str, Any]:
+        """End every unfinished execution and roll back the package for export."""
+        try:
+            task_packages.get(package_id)
+            executions = database.all(
+                """SELECT * FROM executions WHERE task_package_id=?
+                   AND state NOT IN ('COMPLETED','FAILED','INTERRUPTED')""",
+                (package_id,),
+            )
+            for execution in executions:
+                engine.interrupt(
+                    str(execution["id"]), {"reason": "OPERATOR_ROLLBACK", "package_id": package_id}
+                )
+            with database.transaction() as connection:
+                connection.execute(
+                    """UPDATE tasks SET status='SKIPPED' WHERE task_package_id=?
+                       AND status NOT IN ('COMPLETED','SKIPPED')""",
+                    (package_id,),
+                )
+            return task_packages.get(package_id)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @app.get("/api/executions")
     def list_executions() -> list[dict[str, object]]:
         return database.all(

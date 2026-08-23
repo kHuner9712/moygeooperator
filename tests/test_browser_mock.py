@@ -87,8 +87,7 @@ class BrowserMockTestCase(unittest.TestCase):
             self.tenant["id"],
             build_task_package(self.tenant["id"], f"package-{number}", [task]),
         )
-        self.approvals.decide(package["approval_id"], True, "browser-test")
-        package = self.task_packages.mark_decision(package["id"], True)
+        self.approve_package(package)
         stored_task = package["tasks"][0]
         execution = self.engine.create(
             self.tenant["id"],
@@ -98,6 +97,14 @@ class BrowserMockTestCase(unittest.TestCase):
             stored_task["id"],
         )
         return package, execution
+
+    def approve_package(
+        self, package: dict[str, object], actor: str = "browser-test"
+    ) -> dict[str, object]:
+        platforms = list(dict.fromkeys(str(task["platform"]) for task in package["tasks"]))
+        self.task_packages.set_platform_selection(package["id"], platforms)
+        self.approvals.decide(package["approval_id"], True, actor)
+        return self.task_packages.mark_decision(package["id"], True)
 
     def run_worker(
         self,
@@ -140,8 +147,7 @@ class BrowserMockTestCase(unittest.TestCase):
             self.tenant["id"],
             build_task_package(self.tenant["id"], f"kzq-acceptance-{token}", tasks),
         )
-        self.approvals.decide(package["approval_id"], True, "kzq-acceptance")
-        package = self.task_packages.mark_decision(package["id"], True)
+        self.approve_package(package, "kzq-acceptance")
         execution_ids = []
         for task in package["tasks"]:
             execution = self.engine.create(
@@ -422,8 +428,7 @@ class BrowserMockTestCase(unittest.TestCase):
             self.tenant["id"],
             build_task_package(self.tenant["id"], f"blocked-package-{token}", [first, second]),
         )
-        self.approvals.decide(package["approval_id"], True, "browser-test")
-        package = self.task_packages.mark_decision(package["id"], True)
+        self.approve_package(package)
         executions = []
         for task in package["tasks"]:
             executions.append(
@@ -474,8 +479,7 @@ class BrowserMockTestCase(unittest.TestCase):
                     self.tenant["id"], f"platform-gate-package-{token}-{index}", [task]
                 ),
             )
-            self.approvals.decide(package["approval_id"], True, "browser-test")
-            package = self.task_packages.mark_decision(package["id"], True)
+            self.approve_package(package)
             stored_task = package["tasks"][0]
             executions.append(
                 self.engine.create(
@@ -813,8 +817,7 @@ class BrowserMockTestCase(unittest.TestCase):
             self.tenant["id"],
             build_task_package(self.tenant["id"], f"pending-package-{token}", [task]),
         )
-        self.approvals.decide(package["approval_id"], True, "calibration-gate-test")
-        package = self.task_packages.mark_decision(package["id"], True)
+        self.approve_package(package, "calibration-gate-test")
         execution = self.engine.create(
             self.tenant["id"],
             "qwen",

@@ -1,5 +1,8 @@
+import io
+import json
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -72,6 +75,101 @@ class PlatformSelectionTestCase(unittest.TestCase):
             json={"platforms": ["deepseek"]},
         )
         self.assertEqual(locked.status_code, 409)
+
+    def test_fresh_import_has_no_selected_platforms(self) -> None:
+        package = self._import_multi_platform_package("no-default-checked")
+        self.assertEqual(package["selected_platforms"], [])
+        statuses = {task["platform"]: task["status"] for task in package["tasks"]}
+        self.assertEqual(set(statuses.values()), {"PENDING"})
+
+    def test_approval_requires_explicit_saved_platform_selection(self) -> None:
+        package = self._import_multi_platform_package("no-injection")
+        response = self.client.post(
+            f"/api/approvals/{package['approval_id']}/decision",
+            json={"approved": True, "actor": "tester", "note": ""},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Select at least one detection platform", response.json()["detail"])
+        executions = self.client.get("/api/executions").json()
+        self.assertEqual(executions, [])
+
+    def test_interrupt_rolls_back_unfinished_platforms_and_allows_partial_export(self) -> None:
+        package = self._import_multi_platform_package("interrupt-rollback")
+        selected = self.client.put(
+            f"/api/task-packages/{package['id']}/platform-selection",
+            json={"platforms": ["chatgpt", "deepseek"]},
+        )
+        self.assertEqual(selected.status_code, 200)
+        approved = self.client.post(
+            f"/api/approvals/{package['approval_id']}/decision",
+            json={"approved": True, "actor": "tester", "note": ""},
+        )
+        self.assertEqual(approved.status_code, 200)
+        executions = self.client.get("/api/executions").json()
+        self.assertEqual(len(executions), 2)
+        chatgpt_execution = next(item for item in executions if item["platform"] == "chatgpt")
+
+        database = self.client.app.state.services["database"]
+        artifacts = self.client.app.state.services["artifacts"]
+        with database.transaction() as connection:
+            connection.execute(
+                "UPDATE executions SET state='COMPLETED' WHERE id=?",
+                (chatgpt_execution["id"],),
+            )
+            connection.execute(
+                "UPDATE tasks SET status='COMPLETED' WHERE id=?",
+                (chatgpt_execution["task_id"],),
+            )
+        result_id = "completed-result"
+        relative = f"results/{result_id}.txt"
+        _, digest = artifacts.atomic_write(
+            self.tenant["id"], relative, b"completed response"
+        )
+        screenshot_relative = f"results/screenshots/{result_id}.png"
+        artifacts.atomic_write(self.tenant["id"], screenshot_relative, b"fake png")
+        with database.transaction() as connection:
+            connection.execute(
+                """INSERT INTO results(id,execution_id,tenant_id,relative_path,content_sha256,
+                   completion_signals_json,saved_at,screenshot_path) VALUES (?,?,?,?,?,'{}',?,?)""",
+                (
+                    result_id,
+                    chatgpt_execution["id"],
+                    self.tenant["id"],
+                    relative,
+                    digest,
+                    "2026-08-24T00:00:00+00:00",
+                    screenshot_relative,
+                ),
+            )
+
+        interrupted = self.client.post(f"/api/task-packages/{package['id']}/interrupt")
+        self.assertEqual(interrupted.status_code, 200)
+        after = self.client.get("/api/executions").json()
+        states = {item["platform"]: item["state"] for item in after}
+        self.assertEqual(states["chatgpt"], "COMPLETED")
+        self.assertEqual(states["deepseek"], "INTERRUPTED")
+        task_states = {task["platform"]: task["status"] for task in interrupted.json()["tasks"]}
+        self.assertEqual(task_states["deepseek"], "SKIPPED")
+
+        requested = self.client.post(
+            f"/api/task-packages/{package['id']}/result-export-approval"
+        )
+        self.assertEqual(requested.status_code, 200)
+        approved_export = self.client.post(
+            f"/api/approvals/{requested.json()['id']}/decision",
+            json={"approved": True, "actor": "tester", "note": ""},
+        )
+        self.assertEqual(approved_export.status_code, 200)
+
+        exported = self.client.post(f"/api/task-packages/{package['id']}/result-export")
+        self.assertEqual(exported.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            lines = archive.read("results.jsonl").decode("utf-8").strip().splitlines()
+        self.assertEqual(manifest["interrupted_platforms"], ["deepseek"])
+        statuses = [json.loads(line)["final_status"] for line in lines]
+        self.assertIn("COMPLETED", statuses)
+        self.assertIn("INTERRUPTED", statuses)
 
     def test_paused_platform_cannot_be_selected(self) -> None:
         package = self._import_multi_platform_package("paused-platform")

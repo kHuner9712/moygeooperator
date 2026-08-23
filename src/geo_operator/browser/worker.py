@@ -172,7 +172,12 @@ class BrowserWorker:
             execution = self.engine.get(execution_id)
             state = ExecutionState(execution["state"])
             self._raise_if_tenant_inactive(execution)
-            if state in {ExecutionState.COMPLETED, ExecutionState.FAILED, ExecutionState.PAUSED}:
+            if state in {
+                ExecutionState.COMPLETED,
+                ExecutionState.FAILED,
+                ExecutionState.PAUSED,
+                ExecutionState.INTERRUPTED,
+            }:
                 return execution
             self._raise_if_paused(execution_id)
 
@@ -764,9 +769,12 @@ class BrowserWorker:
 
     def _raise_if_paused(self, execution_id: str) -> None:
         execution = self.engine.get(execution_id)
-        if execution["state"] == ExecutionState.PAUSED.value:
+        if execution["state"] in {
+            ExecutionState.PAUSED.value,
+            ExecutionState.INTERRUPTED.value,
+        }:
             raise ExecutionExternallyPaused(
-                f"Execution {execution_id} was paused outside the active worker"
+                f"Execution {execution_id} was stopped outside the active worker"
             )
         self._raise_if_tenant_inactive(execution)
 

@@ -46,6 +46,11 @@ class ApiWorkflowTestCase(unittest.TestCase):
             content=build_task_package(tenant_id, "delete-package", [make_task(1)]),
             headers={"Content-Type": "application/zip"},
         ).json()
+        selected = self.client.put(
+            f"/api/task-packages/{package['id']}/platform-selection",
+            json={"platforms": ["mock"]},
+        )
+        self.assertEqual(selected.status_code, 200)
         self.assertEqual(
             self.client.post(
                 f"/api/approvals/{package['approval_id']}/decision",
@@ -136,6 +141,13 @@ class ApiWorkflowTestCase(unittest.TestCase):
             json={"approved": True, "actor": "tester", "note": ""},
         )
         self.assertEqual(approved_profile.status_code, 200)
+
+        selected = self.client.put(
+            f"/api/task-packages/{package_data['id']}/platform-selection",
+            json={"platforms": ["mock"]},
+        )
+        self.assertEqual(selected.status_code, 200)
+        self.assertEqual(selected.json()["selected_platforms"], ["mock"])
 
         approved_tasks = self.client.post(
             f"/api/approvals/{package_data['approval_id']}/decision",

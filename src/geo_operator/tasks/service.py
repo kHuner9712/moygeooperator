@@ -123,8 +123,13 @@ class TaskPackageService:
             ).fetchone()
             if not row:
                 raise KeyError("Task package not found")
+            row = dict(row)
             if row["status"] != "WAIT_HUMAN_APPROVAL":
                 raise ValueError("Task package decision has already been applied")
+            if approved and not self._saved_platform_selection(row):
+                raise ValueError(
+                    "Select and save detection platforms before task approval"
+                )
             connection.execute(
                 "UPDATE task_packages SET status=? WHERE id=?",
                 ("APPROVED" if approved else "REJECTED", package_id),
@@ -184,6 +189,10 @@ class TaskPackageService:
 
         selected_set = set(selected)
         with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE task_packages SET platform_selection_json=? WHERE id=?",
+                (json.dumps(selected, ensure_ascii=False), package_id),
+            )
             for task in tasks:
                 connection.execute(
                     "UPDATE tasks SET status=? WHERE id=?",
@@ -192,26 +201,35 @@ class TaskPackageService:
         return self.get(package_id)
 
     def execution_tasks(self, package_id: str) -> list[dict[str, Any]]:
+        package = self.database.one("SELECT * FROM task_packages WHERE id=?", (package_id,))
+        if not package:
+            raise KeyError("Task package not found")
+        selected = self._saved_platform_selection(package)
+        if not selected:
+            return []
+        placeholders = ",".join("?" * len(selected))
         return self.database.all(
-            """SELECT * FROM tasks WHERE task_package_id=? AND status!='SKIPPED'
+            f"""SELECT * FROM tasks WHERE task_package_id=?
+               AND platform IN ({placeholders}) AND status!='SKIPPED'
                ORDER BY sequence""",
-            (package_id,),
+            (package_id, *selected),
         )
+
+    @staticmethod
+    def _saved_platform_selection(package: dict[str, Any]) -> list[str]:
+        try:
+            selected = json.loads(str(package.get("platform_selection_json") or "[]"))
+        except (TypeError, ValueError):
+            selected = []
+        return [str(platform) for platform in selected if isinstance(platform, str)]
 
     @staticmethod
     def _attach_platform_selection(
         package: dict[str, Any], tasks: list[dict[str, Any]]
     ) -> None:
         platforms = list(dict.fromkeys(str(task["platform"]) for task in tasks))
-        selected = list(
-            dict.fromkeys(
-                str(task["platform"])
-                for task in tasks
-                if str(task.get("status") or "PENDING") != "SKIPPED"
-            )
-        )
         package["platforms"] = platforms
-        package["selected_platforms"] = selected
+        package["selected_platforms"] = TaskPackageService._saved_platform_selection(package)
 
     def _assert_tenant(self, tenant_id: str) -> None:
         if not self.database.one(
