@@ -12,9 +12,17 @@ class KimiPlugin(_AdditionalKimiPlugin):
     selector must explicitly exclude both ``stop`` and the older ``loading`` state. Otherwise the
     worker can record a QUERY_SEND intent and click a stop control without ever delivering the
     prompt.
+
+    Kimi can also occasionally accept the click at the DOM level without committing the prompt.
+    When the exact prompt remains in the composer, no matching user turn exists, and no stop/loading
+    state is active after a bounded grace period, the page itself proves non-delivery. The worker may
+    then perform one bounded automatic retry without weakening the normal idempotency guard.
     """
 
     observed_at = "2026-08-23"
+    can_prove_query_non_delivery = True
+    query_non_delivery_grace_seconds = 4.0
+    automatic_retry_on_proven_non_delivery = True
 
     selectors = PhaseOneSelectors(
         login_indicators=_AdditionalKimiPlugin.selectors.login_indicators,
@@ -47,3 +55,18 @@ class KimiPlugin(_AdditionalKimiPlugin):
         final_response_descendants=_AdditionalKimiPlugin.selectors.final_response_descendants,
         query_failure_descendants=_AdditionalKimiPlugin.selectors.query_failure_descendants,
     )
+
+    async def query_delivery_failed(self, page, prompt: str) -> bool:
+        """Prove a dropped send only from durable composer state, never from history absence alone."""
+        if await self.query_exists(page, prompt):
+            return await super().query_delivery_failed(page, prompt)
+        if await self._any_visible(page, self.selectors.stop_controls):
+            return False
+        composer = await self._one_visible(page, self.selectors.prompt_inputs)
+        if composer is None:
+            return False
+        actual = self.normalize_query_text(await composer.inner_text())
+        expected = self.normalize_query_text(prompt)
+        if not actual or actual != expected:
+            return False
+        return await self._one_visible(page, self.selectors.send_controls) is not None
