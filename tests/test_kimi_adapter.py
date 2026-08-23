@@ -1,3 +1,4 @@
+import inspect
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -16,57 +17,51 @@ class KimiAdapterTestCase(unittest.TestCase):
             plugin.selectors.prompt_inputs[0],
             "div.chat-input-editor[role='textbox'][contenteditable='true']",
         )
-        self.assertIn(
-            "div.chat-input-editor[contenteditable='true']",
-            plugin.selectors.prompt_inputs,
-        )
-        self.assertEqual(
-            plugin.selectors.send_controls[0],
-            "div.send-button-container:not(.disabled):not(.stop):not(.loading)",
-        )
-        self.assertNotIn(
-            ".send-button-container:not(.disabled):not(.loading)",
-            plugin.selectors.send_controls,
-        )
-        self.assertIn("div.send-button-container.stop", plugin.selectors.streaming_indicators)
-        self.assertIn("div.send-button-container.stop", plugin.selectors.stop_controls)
+        self.assertEqual(plugin.selectors.send_controls[0], "svg[name='Send']")
+        self.assertIn("chat-content-item-user", plugin.selectors.user_queries[0])
+        self.assertIn("segment-user", plugin.selectors.user_queries[0])
+        self.assertIn("svg[name='Stop']", plugin.selectors.stop_controls)
         self.assertTrue(plugin.calibration_complete)
+
+    def test_history_recovery_uses_kimi_history_entry_parameter(self) -> None:
+        source = inspect.getsource(KimiPlugin.recover_pending_query)
+
+        self.assertIn('query="chat_enter_method=history"', source)
+        self.assertIn("timeout=15_000", source)
+        self.assertIn("a[href*='/chat/']", source)
 
 
 class KimiDroppedSendRecoveryTestCase(unittest.IsolatedAsyncioTestCase):
-    async def test_exact_prompt_retained_in_idle_composer_retries_once(self) -> None:
+    async def test_idle_exact_prompt_retries_once_without_new_user_turn(self) -> None:
         plugin = KimiPlugin()
         page = SimpleNamespace(url="https://www.kimi.com/")
         prompt = "Which suppliers should I contact?"
         composer = SimpleNamespace(inner_text=AsyncMock(return_value=prompt))
         retry_send = SimpleNamespace(click=AsyncMock())
 
-        plugin.query_exists = AsyncMock(return_value=False)
+        plugin._query_match_count = AsyncMock(return_value=0)
+        plugin._wait_for_new_user_turn = AsyncMock(side_effect=[False, True])
         plugin._any_visible = AsyncMock(return_value=False)
         plugin._one_visible = AsyncMock(return_value=composer)
         plugin._unique_visible = AsyncMock(return_value=retry_send)
 
-        with (
-            patch(
-                "geo_operator.browser.plugins.phase1.ObservedWebChatPlugin.send_query",
-                new=AsyncMock(),
-            ) as first_send,
-            patch(
-                "geo_operator.browser.plugins.kimi.time.monotonic",
-                side_effect=[0.0, 6.0],
-            ),
-        ):
+        with patch(
+            "geo_operator.browser.plugins.phase1.ObservedWebChatPlugin.send_query",
+            new=AsyncMock(),
+        ) as first_send:
             await plugin.send_query(page, prompt)
 
         first_send.assert_awaited_once_with(page, prompt)
         retry_send.click.assert_awaited_once_with()
+        self.assertEqual(plugin._wait_for_new_user_turn.await_count, 2)
 
-    async def test_routed_conversation_never_retries(self) -> None:
+    async def test_rendered_new_user_turn_prevents_retry(self) -> None:
         plugin = KimiPlugin()
-        page = SimpleNamespace(url="https://www.kimi.com/chat/12345678-1234-1234-1234-123456789abc")
+        page = SimpleNamespace(url="https://www.kimi.com/")
         retry_send = SimpleNamespace(click=AsyncMock())
 
-        plugin.query_exists = AsyncMock(return_value=False)
+        plugin._query_match_count = AsyncMock(return_value=0)
+        plugin._wait_for_new_user_turn = AsyncMock(return_value=True)
         plugin._unique_visible = AsyncMock(return_value=retry_send)
 
         with patch(
