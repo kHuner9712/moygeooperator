@@ -33,7 +33,7 @@ from geo_operator.discovery import PublicDiscoveryService
 from geo_operator.domain import PauseReason
 from geo_operator.exports import ResultPackageService
 from geo_operator.mock_platform import router as mock_router
-from geo_operator.platforms import platform_definition
+from geo_operator.platforms import canonical_platform, platform_definition
 from geo_operator.profiles import ClientProfileService
 from geo_operator.results import ResultService
 from geo_operator.runtime import RuntimeWorkerRegistry
@@ -62,6 +62,10 @@ class ApprovalDecision(BaseModel):
     approved: bool
     actor: str = Field(min_length=1, max_length=100)
     note: str = Field(default="", max_length=2000)
+
+
+class PlatformSelection(BaseModel):
+    platforms: list[str] = Field(min_length=1, max_length=20)
 
 
 class ProfileCreate(BaseModel):
@@ -146,6 +150,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise ValueError("Tenant not found")
         if tenant["status"] != "ACTIVE":
             raise ValueError("Customer is being deleted")
+
+    def validate_dispatch_platforms(platforms: list[str]) -> list[str]:
+        selected: list[str] = []
+        for value in platforms:
+            platform = canonical_platform(value)
+            if platform in selected:
+                continue
+            if platform != "mock":
+                plugin = live_plugin(platform)
+                status = plugin.calibration_status()
+                if not status.get("dispatch_eligible", False):
+                    raise ValueError(
+                        f"{platform} is {status.get('support_status', 'unavailable')}; "
+                        "select an execution-ready platform"
+                    )
+            selected.append(platform)
+        if not selected:
+            raise ValueError("Select at least one detection platform")
+        return selected
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard() -> HTMLResponse:
@@ -266,13 +289,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     raise ValueError(
                         "An approved client profile is required before TASK_EXECUTION approval"
                     )
+                selected_tasks = task_packages.execution_tasks(str(package_for_gate["id"]))
+                if not selected_tasks:
+                    raise ValueError("Select at least one detection platform before task approval")
+                validate_dispatch_platforms(
+                    list(dict.fromkeys(str(task["platform"]) for task in selected_tasks))
+                )
             approval = approvals.decide(approval_id, body.approved, body.actor, body.note)
             if approval["resource_type"] == "client_profile":
                 profiles.mark_decision(str(approval["resource_id"]), body.approved)
             elif approval["resource_type"] == "task_package":
                 package = task_packages.mark_decision(str(approval["resource_id"]), body.approved)
                 if body.approved:
-                    for task in package["tasks"]:
+                    for task in task_packages.execution_tasks(str(package["id"])):
                         existing = database.one(
                             "SELECT id FROM executions WHERE task_id=?", (task["id"],)
                         )
@@ -373,6 +402,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return task_packages.get(package_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.put("/api/task-packages/{package_id}/platform-selection")
+    def set_task_platform_selection(
+        package_id: str, body: PlatformSelection
+    ) -> dict[str, Any]:
+        try:
+            selected = validate_dispatch_platforms(body.platforms)
+            return task_packages.set_platform_selection(package_id, selected)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/api/executions")
     def list_executions() -> list[dict[str, object]]:
