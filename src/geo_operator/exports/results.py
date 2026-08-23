@@ -25,11 +25,12 @@ class ResultPackageService:
     def request_approval(self, task_package_id: str) -> dict[str, Any]:
         package = self._package(task_package_id)
         incomplete = self.database.one(
-            "SELECT id FROM tasks WHERE task_package_id=? AND status!='COMPLETED' LIMIT 1",
+            """SELECT id FROM tasks WHERE task_package_id=?
+               AND status NOT IN ('COMPLETED','SKIPPED') LIMIT 1""",
             (task_package_id,),
         )
         if incomplete:
-            raise ValueError("All tasks must be COMPLETED before result export approval")
+            raise ValueError("All selected tasks must be COMPLETED before result export approval")
         return self.approvals.request(
             str(package["tenant_id"]),
             ApprovalStage.RESULT_EXPORT,
@@ -56,7 +57,9 @@ class ResultPackageService:
             (task_package_id,),
         )
         expected = self.database.one(
-            "SELECT COUNT(*) AS count FROM tasks WHERE task_package_id=?", (task_package_id,)
+            """SELECT COUNT(*) AS count FROM tasks
+               WHERE task_package_id=? AND status!='SKIPPED'""",
+            (task_package_id,),
         )
         if not rows or len(rows) != int(expected["count"]):
             raise ValueError("Result set is incomplete")
