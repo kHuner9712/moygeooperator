@@ -7,20 +7,27 @@ from urllib.parse import urljoin, urlsplit
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from geo_operator.browser.plugins.additional import KimiPlugin as _AdditionalKimiPlugin
-from geo_operator.browser.plugins.phase1 import PhaseOneSelectors
+from geo_operator.browser.plugins.phase1 import PhaseOneSelectors, PluginPageAbnormal
 
 
 class KimiPlugin(_AdditionalKimiPlugin):
-    """Kimi adapter refreshed for durable send and history recovery semantics.
+    """Kimi adapter refreshed for durable send, recovery, and task isolation semantics.
 
     Kimi uses one composer action as both Send and Stop. Sending is considered delivered only after
     a rendered user turn containing the prompt exists; URL routing, composer clearing, or stop-state
     changes are not sufficient delivery evidence. Historical chat navigation also needs
     ``chat_enter_method=history`` so Kimi mounts the message list before query reconciliation.
+
+    Kimi's SPA can remain on a partially broken conversation surface after several automated turns
+    or after deleting a chat. Every normal task entry therefore starts from the explicit new-chat
+    route and requires the composer (or a login/intervention surface) to hydrate before the worker
+    continues. One bounded reload is allowed for transient SPA failures. Pause recovery still uses
+    the saved/history conversation URL and does not call this fresh-entry path.
     """
 
     observed_at = "2026-08-23"
     conversation_link_selectors = ("a[href*='/chat/']",)
+    _new_chat_url = "https://www.kimi.com/?chat_enter_method=new_chat"
 
     _user_turn_selector = (
         ".chat-content-list .chat-content-item-user, "
@@ -64,6 +71,24 @@ class KimiPlugin(_AdditionalKimiPlugin):
         final_response_descendants=_AdditionalKimiPlugin.selectors.final_response_descendants,
         query_failure_descendants=_AdditionalKimiPlugin.selectors.query_failure_descendants,
     )
+
+    async def open_platform(self, page) -> None:
+        """Enter a clean Kimi new-chat surface, retrying one transient SPA hydration failure."""
+        for attempt in range(2):
+            await page.goto(self._new_chat_url, wait_until="domcontentloaded")
+            deadline = time.monotonic() + 10.0
+            while time.monotonic() < deadline:
+                if await self._any_visible(page, self.selectors.login_indicators):
+                    return
+                if await self._one_visible(page, self.selectors.prompt_inputs) is not None:
+                    return
+                intervention = await self.detect_human_intervention(page)
+                if intervention and intervention != "LOGIN_EXPIRED":
+                    return
+                await asyncio.sleep(0.25)
+            if attempt == 0:
+                await page.reload(wait_until="domcontentloaded")
+        raise PluginPageAbnormal("Kimi new-chat composer did not become ready after reload")
 
     async def _query_match_count(self, page, prompt: str) -> int:
         expected = self.normalize_query_text(prompt)
