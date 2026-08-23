@@ -10,7 +10,8 @@ class DoubaoPlugin(_PhaseOneDoubaoPlugin):
     """Doubao selectors refreshed against the current web UI.
 
     Prefer stable data-testid and Semi UI attributes for login/composer detection. Keep the
-    previously calibrated selectors as fallbacks so older routed/chat states remain supported.
+    previously calibrated conversation, response, and deletion selectors unchanged so this
+    patch only affects the login/resume boundary that currently blocks execution.
     """
 
     observed_at = "2026-08-23"
@@ -31,40 +32,16 @@ class DoubaoPlugin(_PhaseOneDoubaoPlugin):
             "button[data-testid='chat_input_send_button']",
             "button#flow-end-msg-send",
         ),
-        user_queries=(
-            "[data-testid='send_message']",
-            (
-                "[class*='message-list-'] .v_list_row:has(.bg-g-send-msg-bubble-bg) "
-                ".bg-g-send-msg-bubble-bg"
-            ),
-        ),
-        responses=(
-            "[data-testid='receive_message']",
-            "[class*='message-list-'] .v_list_row:not(:has(.bg-g-send-msg-bubble-bg)) .md-box-root",
-        ),
-        streaming_indicators=("[class*='break-btn-']",),
-        stop_controls=("[class*='break-btn-']",),
-        conversation_menu_controls=(
-            (
-                "a[id^='conversation_'] "
-                "button[data-slot='dropdown-menu-trigger'][aria-haspopup='menu']"
-            ),
-        ),
-        delete_controls=("[role='menuitem']",),
-        delete_confirm_controls=(
-            "[role='dialog'] [data-slot='dialog-footer'] button.bg-dbx-function-danger",
-        ),
-        final_response_descendants=(
-            (
-                "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), "
-                "' v_list_row ')][1]//*[contains(@class, 'message-action-bar-')]"
-            ),
-        ),
-        query_failure_descendants=(
-            (
-                "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), "
-                "' v_list_row ')][1]//*[name()='svg' and "
-                "contains(@class, 'text-s-color-alert')]"
-            ),
-        ),
+        user_queries=_PhaseOneDoubaoPlugin.selectors.user_queries,
+        responses=_PhaseOneDoubaoPlugin.selectors.responses,
+        streaming_indicators=_PhaseOneDoubaoPlugin.selectors.streaming_indicators,
+        stop_controls=_PhaseOneDoubaoPlugin.selectors.stop_controls,
+        error_indicators=_PhaseOneDoubaoPlugin.selectors.error_indicators,
+        rate_limit_indicators=_PhaseOneDoubaoPlugin.selectors.rate_limit_indicators,
+        security_indicators=_PhaseOneDoubaoPlugin.selectors.security_indicators,
+        conversation_menu_controls=_PhaseOneDoubaoPlugin.selectors.conversation_menu_controls,
+        delete_controls=_PhaseOneDoubaoPlugin.selectors.delete_controls,
+        delete_confirm_controls=_PhaseOneDoubaoPlugin.selectors.delete_confirm_controls,
+        final_response_descendants=_PhaseOneDoubaoPlugin.selectors.final_response_descendants,
+        query_failure_descendants=_PhaseOneDoubaoPlugin.selectors.query_failure_descendants,
     )
