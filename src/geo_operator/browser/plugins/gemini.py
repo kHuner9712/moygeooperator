@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from geo_operator.browser.plugins.additional import GeminiPlugin as _AdditionalGeminiPlugin
-from geo_operator.browser.plugins.phase1 import PhaseOneSelectors, PluginPageAbnormal
+from geo_operator.browser.plugins.phase1 import PhaseOneSelectors
 
 
 class GeminiPlugin(_AdditionalGeminiPlugin):
@@ -92,31 +92,10 @@ class GeminiPlugin(_AdditionalGeminiPlugin):
     async def query_exists(self, page, prompt: str) -> bool:
         """Confirm one exact Gemini user turn without double-counting nested wrappers."""
         expected = self.normalize_query_text(prompt)
-        matched_nodes: set[object] = set()
-        matches = 0
-
         for selector in self._query_candidates:
             nodes = page.locator(selector)
             for index in range(await nodes.count()):
-                node = nodes.nth(index)
-                handle = await node.element_handle()
-                if handle is None:
-                    continue
-                identity = await handle.evaluate("node => node")
-                # Playwright JSHandle objects are not reliably hashable across implementations;
-                # use the node's text/selector priority to avoid duplicate exact matches instead.
-                actual = self.normalize_query_text(await node.inner_text())
-                if actual != expected:
-                    continue
-                marker = (selector, index, actual)
-                if marker in matched_nodes:
-                    continue
-                matched_nodes.add(marker)
-                matches += 1
-                # A more specific selector may match the same DOM turn as a later wrapper.
-                # One exact hit is sufficient; do not walk broader wrappers and count it again.
-                return True
-
-        if matches > 1:
-            raise PluginPageAbnormal("Multiple identical Gemini user query nodes found")
+                actual = self.normalize_query_text(await nodes.nth(index).inner_text())
+                if actual == expected:
+                    return True
         return False
