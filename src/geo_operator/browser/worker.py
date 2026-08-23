@@ -669,6 +669,17 @@ class BrowserWorker:
                 await asyncio.sleep(0.25)
             raise RuntimeError("Signed-in pre-send page did not become ready")
 
+        async def recover_pending_query_from_history() -> bool:
+            recover = getattr(plugin, "recover_pending_query", None)
+            if not pending_query or not callable(recover):
+                return False
+            task = self._task(execution)
+            recovered = await recover(page, str(task["prompt"]))
+            if not recovered:
+                return False
+            self.engine.bind_recovery_url(execution_id, recovered)
+            return True
+
         rows = self.database.all(
             """SELECT payload_json FROM execution_events
                WHERE execution_id=?
@@ -677,13 +688,9 @@ class BrowserWorker:
             (execution_id,),
         )
         if not rows:
-            recover = getattr(plugin, "recover_pending_query", None)
-            if pending_query and callable(recover):
-                task = self._task(execution)
-                recovered = await recover(page, str(task["prompt"]))
-                if recovered:
-                    self.engine.bind_recovery_url(execution_id, recovered)
-                    return
+            if await recover_pending_query_from_history():
+                return
+            if pending_query:
                 raise RuntimeError("Pending query was not found in recent conversations")
             return
         home = urlsplit(home_url)
@@ -733,14 +740,8 @@ class BrowserWorker:
                         and not await history_check(page, candidate)
                     ):
                         return
-                    recover = getattr(plugin, "recover_pending_query", None)
-                    if pending_query and callable(recover):
-                        execution = self.engine.get(execution_id)
-                        task = self._task(execution)
-                        recovered = await recover(page, str(task["prompt"]))
-                        if recovered:
-                            self.engine.bind_recovery_url(execution_id, recovered)
-                            return
+                    if await recover_pending_query_from_history():
+                        return
                     raise RuntimeError(f"Saved {plugin.name} conversation did not hydrate")
             if pending_query:
                 task = self._task(execution)
@@ -749,16 +750,16 @@ class BrowserWorker:
                 except Exception:  # noqa: BLE001 - invalid candidate must use bounded recovery
                     query_matches = False
                 if not query_matches:
-                    recover = getattr(plugin, "recover_pending_query", None)
-                    if callable(recover):
-                        recovered = await recover(page, str(task["prompt"]))
-                        if recovered:
-                            self.engine.bind_recovery_url(execution_id, recovered)
-                            return
+                    if await recover_pending_query_from_history():
+                        return
                     raise RuntimeError(
                         f"Saved {plugin.name} conversation does not contain the pending query"
                     )
             return
+        if await recover_pending_query_from_history():
+            return
+        if pending_query:
+            raise RuntimeError("Pending query was not found in recent conversations")
         raise RuntimeError("No safe same-origin pause URL is available")
 
     def _raise_if_paused(self, execution_id: str) -> None:
