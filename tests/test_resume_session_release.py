@@ -75,6 +75,25 @@ class ResumeSessionReleaseTestCase(unittest.TestCase):
         )
         self.assertEqual(latest["event_type"], "EXECUTION_PAUSED")
 
+    def test_pause_evidence_prefers_latest_resume_revalidation_failure(self) -> None:
+        execution = self._paused_execution()
+        self.engine.record_resume_revalidation_failure(
+            execution["id"],
+            PauseReason.PAGE_ABNORMAL.value,
+            {
+                "page_url": "https://www.doubao.com/chat/",
+                "message": "prompt input not ready",
+            },
+        )
+
+        response = self.client.get(f"/api/executions/{execution['id']}/pause-evidence")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["evidence_type"], "RESUME_REVALIDATION_FAILED")
+        self.assertEqual(payload["message"], "prompt input not ready")
+        self.assertEqual(payload["page_url"], "https://www.doubao.com/chat/")
+
 
 if __name__ == "__main__":
     unittest.main()
