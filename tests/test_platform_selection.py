@@ -89,10 +89,14 @@ class PlatformSelectionTestCase(unittest.TestCase):
             json={"platforms": ["chatgpt"]},
         )
         self.assertEqual(selected.status_code, 200)
-        selected_task = next(task for task in selected.json()["tasks"] if task["platform"] == "chatgpt")
+        selected_task = next(
+            task for task in selected.json()["tasks"] if task["platform"] == "chatgpt"
+        )
         database = self.client.app.state.services["database"]
         with database.transaction() as connection:
-            connection.execute("UPDATE tasks SET status='COMPLETED' WHERE id=?", (selected_task["id"],))
+            connection.execute(
+                "UPDATE tasks SET status='COMPLETED' WHERE id=?", (selected_task["id"],)
+            )
         result_packages = self.client.app.state.services["result_packages"]
         approval = result_packages.request_approval(package["id"])
         self.assertEqual(approval["stage"], "RESULT_EXPORT")
@@ -104,6 +108,7 @@ class PlatformSelectionTestCase(unittest.TestCase):
         self.assertIn("package-platform-choice", html)
         self.assertIn("/platform-selection", html)
         self.assertIn("savePlatformSelection", html)
+        self.assertIn("dataset.tenantDisabled", html)
 
 
 if __name__ == "__main__":
