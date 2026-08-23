@@ -174,4 +174,8 @@ class WorkerSupervisor:
     async def _heartbeat_runtime(self) -> None:
         while True:
             self.runtime.heartbeat(self.worker_id, self._runtime_status)
+            # Session cleanup must not wait for the current task to finish. A customer can be
+            # marked DELETING while this supervisor is busy on another execution, and Windows
+            # will keep the persistent Chrome profile locked until the owning Worker closes it.
+            await self._close_inactive_tenant_sessions()
             await asyncio.sleep(2.0)
