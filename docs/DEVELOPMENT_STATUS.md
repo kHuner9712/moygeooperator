@@ -16,6 +16,7 @@
 | 任务包导入 | 完成 | schema、tenant、hash、ZIP 路径、平台、ID、序号和幂等校验 |
 | Human Approval Gate | 完成 | CLIENT_PROFILE_REVIEW、TASK_EXECUTION、RESULT_EXPORT；统一 WAIT_HUMAN_APPROVAL |
 | Browser 状态机 | 完成 | 持久状态、合法迁移、事件日志、副作用账本 |
+| Worker 运行监测 | 完成 | 独立进程持久心跳、空闲/检查/执行状态、8 秒失联判定、控制台降级提示、一键启动心跳验收 |
 | 低频操作节奏 | 完成 | 实际发送前可配置随机延迟；状态机记录审计事件；不参与回答完成判断 |
 | 等待与完成判定 | 完成 | streaming/stop/input/final/error 多信号和稳定窗口 |
 | 实时保存 | 完成 | checkpoint、截图、最终结果原子提交 |
@@ -23,7 +24,7 @@
 | Session 管理 | 完成 | tenant/platform/account 隔离、persistent profile、单执行锁、原生 Chrome 登录 |
 | 人工接管 | 完成 | CAPTCHA、登录失效、安全验证、限流、账号限制、页面异常均暂停，禁止绕过 |
 | 结果导出 | 完成 | RESULT_EXPORT 审批、started_at/completed_at、回答/截图/事件/manifest |
-| 本地控制界面 | 完成 | 五步下一步向导、中文状态/异常映射、友好断线提示、审批解释、任务筛选与进度条、响应式布局、高级设置折叠；暂停接入平台禁用登录与校准按钮 |
+| 本地控制界面 | 完成 | 五步下一步向导、中文状态/异常映射、API 与 Worker 分离健康提示、审批解释、任务筛选与进度条、响应式布局、高级设置折叠；暂停接入平台禁用登录与校准按钮 |
 | artifacts 元数据 | 完成 | 路径、SHA-256、大小、MIME、类型、时间 |
 
 ## 平台上线状态

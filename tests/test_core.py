@@ -1,3 +1,4 @@
+import asyncio
 import json
 import tempfile
 import unittest
@@ -6,12 +7,17 @@ from pathlib import Path
 
 from geo_operator.approvals import ApprovalService
 from geo_operator.browser import ExecutionStateMachine
-from geo_operator.browser.worker import WorkerConfig
+from geo_operator.browser.worker import (
+    BrowserWorker,
+    ExecutionExternallyPaused,
+    WorkerConfig,
+)
 from geo_operator.core.config import Settings
 from geo_operator.core.db import Database
 from geo_operator.core.storage import ArtifactStore
 from geo_operator.discovery import PublicDiscoveryService
 from geo_operator.domain import ApprovalStage, ExecutionState, PauseReason
+from geo_operator.runtime import RuntimeWorkerRegistry
 from geo_operator.tenants import TenantService
 
 
@@ -121,6 +127,74 @@ class CoreTestCase(unittest.TestCase):
         run = engine.create(self.tenant["id"], "doubao", "manual")
         with self.assertRaises(ValueError):
             engine.transition(run["id"], ExecutionState.SEND_QUERY)
+
+    def test_runtime_worker_heartbeat_detects_stale_and_superseded_workers(self) -> None:
+        registry = RuntimeWorkerRegistry(self.database)
+        registry.register("worker-1", "BROWSER", {"headless": False})
+        self.assertTrue(registry.latest("BROWSER")["available"])
+
+        registry.heartbeat("worker-1", "BUSY")
+        with self.database.transaction() as connection:
+            connection.execute(
+                "UPDATE runtime_workers SET heartbeat_at=? WHERE worker_id=?",
+                ("2000-01-01T00:00:00+00:00", "worker-1"),
+            )
+        stale = registry.latest("BROWSER")
+        self.assertFalse(stale["available"])
+        self.assertEqual(stale["status"], "STALE")
+
+        registry.register("worker-2", "BROWSER")
+        latest = registry.latest("BROWSER")
+        self.assertTrue(latest["available"])
+        self.assertEqual(latest["worker_id"], "worker-2")
+        previous = self.database.one(
+            "SELECT status FROM runtime_workers WHERE worker_id=?", ("worker-1",)
+        )
+        self.assertEqual(previous["status"], "SUPERSEDED")
+
+    def test_operator_pause_during_pacing_prevents_query_send(self) -> None:
+        class PausedEngine:
+            def __init__(self) -> None:
+                self.pacing_recorded = False
+                self.not_attempted: dict[str, object] | None = None
+
+            def record_operation_pacing(self, execution_id: str, delay: float) -> None:
+                self.pacing_recorded = True
+
+            def get(self, execution_id: str) -> dict[str, str]:
+                return {"state": ExecutionState.PAUSED.value}
+
+            def mark_effect_not_attempted(
+                self, effect_id: str, details: dict[str, object]
+            ) -> None:
+                self.not_attempted = details
+
+        class NeverSendPlugin:
+            async def send_query(self, page: object, prompt: str) -> None:
+                raise AssertionError("query must not be sent after operator pause")
+
+        worker = object.__new__(BrowserWorker)
+        worker.engine = PausedEngine()
+        worker.config = WorkerConfig(
+            poll_interval=0.01,
+            action_delay_min=0.05,
+            action_delay_max=0.05,
+        )
+        with self.assertRaises(ExecutionExternallyPaused):
+            asyncio.run(
+                worker._perform_query_send(
+                    {"id": "execution-1"},
+                    {"prompt": "must not send"},
+                    {"id": "effect-1"},
+                    NeverSendPlugin(),
+                    None,
+                )
+            )
+        self.assertTrue(worker.engine.pacing_recorded)
+        self.assertEqual(
+            worker.engine.not_attempted,
+            {"reason": PauseReason.OPERATOR_REQUESTED.value},
+        )
 
     def test_browser_action_delay_configuration_is_validated(self) -> None:
         with self.assertRaises(ValueError):

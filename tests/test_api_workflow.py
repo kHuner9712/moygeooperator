@@ -63,6 +63,15 @@ class ApiWorkflowTestCase(unittest.TestCase):
         health = self.client.get("/api/health").json()
         self.assertEqual(health["python"], "3.12")
         self.assertEqual(health["browser_mode"], "headed")
+        self.assertEqual(health["status"], "degraded")
+        self.assertFalse(health["worker"]["available"])
+        self.assertEqual(health["queue"]["queued"], 0)
+        registry = self.client.app.state.services["runtime_workers"]
+        registry.register("api-test-worker", "BROWSER")
+        online = self.client.get("/api/health").json()
+        self.assertEqual(online["status"], "ok")
+        self.assertTrue(online["worker"]["available"])
+
         self.assertEqual(self.client.get("/openapi.json").json()["info"]["version"], "0.3.0")
         platforms = {item["platform"]: item for item in self.client.get("/api/platforms").json()}
         self.assertTrue(platforms["chatgpt"]["complete"])
@@ -141,6 +150,10 @@ class ApiWorkflowTestCase(unittest.TestCase):
         self.assertIn('id="executionFilter"', html)
         self.assertIn("function renderGuide()", html)
         self.assertIn("无法连接本地服务", html)
+        self.assertIn('id="runtimeStatus"', html)
+        self.assertIn("function renderRuntime(health)", html)
+        self.assertIn("SECURITY_CHALLENGE:'平台要求安全验证'", html)
+        self.assertIn("api('/api/health')", html)
         self.assertIn("需要完成验证码", html)
         self.assertIn('<details class="card platform-card advanced">', html)
         self.assertNotIn(">Pause<", html)

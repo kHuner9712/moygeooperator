@@ -137,6 +137,13 @@ CREATE TABLE IF NOT EXISTS browser_sessions (
  profile_path TEXT NOT NULL, updated_at TEXT NOT NULL,
  UNIQUE(tenant_id,platform,account_id)
 );
+CREATE TABLE IF NOT EXISTS runtime_workers (
+ worker_id TEXT PRIMARY KEY, worker_type TEXT NOT NULL, status TEXT NOT NULL,
+ started_at TEXT NOT NULL, heartbeat_at TEXT NOT NULL, stopped_at TEXT,
+ details_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_runtime_workers_type_heartbeat
+ ON runtime_workers(worker_type,heartbeat_at);
 """
 
 

@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GEO 任务执行中心</title>
+<link rel="icon" href="data:,">
 <style>
 *{box-sizing:border-box}body{margin:0}header{color:#fff}header h1{margin:0}
 main{max-width:1280px;padding:0 20px}.toolbar,.grid{display:grid}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -19,6 +20,7 @@ body{background:#f4f6f9}header{background:linear-gradient(115deg,#17324d,#225f78
 .header-inner{max-width:1280px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:18px}
 header h1{font-size:24px;letter-spacing:.02em}header small{display:block;margin-top:3px;color:#dbeaf2}
 .status{background:#dff7e8;color:#145c37;padding:7px 12px;border-radius:99px;font-size:13px;font-weight:700;white-space:nowrap}
+.status.degraded{background:#fff0d6;color:#7a4300}
 main{margin:22px auto 50px}.grid{gap:16px;margin-top:18px}
 .welcome{background:linear-gradient(120deg,#fff,#eef8fa);border:1px solid #d8e7ec;border-radius:16px;padding:20px;margin-bottom:16px}
 .welcome-top{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.welcome h2{font-size:20px;margin:0 0 4px}.updated{font-size:12px;color:#60717e;white-space:nowrap}
@@ -61,7 +63,7 @@ textarea{width:100%;resize:vertical}
 </style>
 </head>
 <body>
-<header><div class="header-inner"><span><h1>GEO 任务执行中心</h1><small>在本机安全地管理客户资料、执行监测任务并导出结果</small></span><span class="status">● 本机服务运行中</span></div></header>
+<header><div class="header-inner"><span><h1>GEO 任务执行中心</h1><small>在本机安全地管理客户资料、执行监测任务并导出结果</small></span><span id="runtimeStatus" class="status degraded">● 正在检查执行器</span></div></header>
 <main>
 <section class="welcome">
  <div class="welcome-top"><div><h2>工作台</h2><div class="card-note">按照下方提示逐步操作，无需了解技术状态或浏览器自动化。</div></div><div id="lastUpdated" class="updated">正在读取最新状态…</div></div>
@@ -132,9 +134,9 @@ const STATE_TEXT={
 };
 const APPROVAL_TEXT={CLIENT_PROFILE_REVIEW:'确认客户档案',TASK_EXECUTION:'确认执行任务',RESULT_EXPORT:'确认导出结果'};
 const STATUS_TEXT={PENDING:'等待确认',APPROVED:'已批准',REJECTED:'已拒绝',DRAFT:'草稿',IMPORTED:'已导入',EXTRACTED:'内容提取完成',STORED_NO_TEXT:'原文件已保存',EXECUTION_READY:'可以执行',CALIBRATION_REQUIRED:'需要完成首次配置',INTEGRATION_PAUSED:'已暂停接入',AI_PENDING:'等待外部 AI 分析',COLLECTED:'读取成功',FAILED:'失败',READY:'可用',IN_USE:'使用中',NEEDS_HUMAN:'需要人工处理',INVALID:'不可用'};
-const PAUSE_TEXT={CAPTCHA:'需要完成验证码',LOGIN_EXPIRED:'平台登录已失效',SECURITY_VERIFICATION:'平台要求安全验证',PAGE_ABNORMAL:'平台页面出现异常',RATE_LIMITED:'平台暂时限制操作',ACCOUNT_RESTRICTED:'账号受到限制',COMPLETION_UNCERTAIN:'无法确认回答是否完整',MANUAL_VERIFICATION_UNAVAILABLE:'当前无法完成人工验证'};
+const PAUSE_TEXT={CAPTCHA:'需要完成验证码',LOGIN_EXPIRED:'平台登录已失效',SECURITY_CHALLENGE:'平台要求安全验证',SECURITY_VERIFICATION:'平台要求安全验证',PAGE_ABNORMAL:'平台页面出现异常',RATE_LIMITED:'平台暂时限制操作',ACCOUNT_RESTRICTED:'账号受到限制',COMPLETION_UNCERTAIN:'无法确认回答是否完整',OPERATOR_REQUESTED:'已由操作员暂停',MANUAL_VERIFICATION_UNAVAILABLE:'当前无法完成人工验证'};
 const PLATFORM_TEXT={doubao:'豆包',chatgpt:'ChatGPT',deepseek:'DeepSeek',gemini:'Gemini',yuanbao:'元宝',kimi:'Kimi',grok:'Grok',perplexity:'Perplexity',qwen:'千问',mock:'模拟平台'};
-let dashboardData={tenants:[],approvals:[],executions:[],packages:[],sessions:[],platforms:[]};
+let dashboardData={tenants:[],approvals:[],executions:[],packages:[],sessions:[],platforms:[],health:null};
 let currentTenantData={sources:[],pages:[],discovery:[],profile:null};
 let lastExecutions=[];
 let refreshing=false;
@@ -163,14 +165,14 @@ function syncTenantControls(){const disabled=!tenantId();document.querySelectorA
 async function refresh(){
  if(refreshing)return;refreshing=true;
  try{
-  const data=await Promise.all([api('/api/tenants'),api('/api/approvals'),api('/api/executions'),api('/api/task-packages'),api('/api/sessions'),api('/api/platforms')]);
-  dashboardData={tenants:data[0],approvals:data[1],executions:data[2],packages:data[3],sessions:data[4],platforms:data[5]};
-  renderTenants(data[0]);renderApprovals(data[1]);renderExecutions(data[2]);renderPackages(data[3]);renderSessions(data[4]);renderPlatforms(data[5]);
+  const data=await Promise.all([api('/api/tenants'),api('/api/approvals'),api('/api/executions'),api('/api/task-packages'),api('/api/sessions'),api('/api/platforms'),api('/api/health')]);
+  dashboardData={tenants:data[0],approvals:data[1],executions:data[2],packages:data[3],sessions:data[4],platforms:data[5],health:data[6]};
+  renderTenants(data[0]);renderApprovals(data[1]);renderExecutions(data[2]);renderPackages(data[3]);renderSessions(data[4]);renderPlatforms(data[5]);renderRuntime(data[6]);
   syncSessionInterventions(data[4]);
   await refreshTenantData();
   renderGuide();syncTenantControls();
   byId('lastUpdated').textContent='最近更新：'+new Date().toLocaleTimeString('zh-CN',{hour12:false});
- }catch(error){notify(friendlyError(error.message),true)}
+ }catch(error){byId('runtimeStatus').className='status degraded';byId('runtimeStatus').textContent='● 本机服务连接失败';notify(friendlyError(error.message),true)}
  finally{refreshing=false}
 }
 function renderTenants(items){
@@ -268,6 +270,13 @@ function renderPlatforms(items){
  }).join('');
  byId('sessionControls').innerHTML=controls;
 }
+function renderRuntime(health){
+ const worker=health&&health.worker,available=Boolean(worker&&worker.available),badge=byId('runtimeStatus');
+ badge.className='status '+(available?'':'degraded');
+ badge.textContent=available?'● 控制台与执行器正常':'● 浏览器执行器未连接';
+ badge.title=available?'浏览器执行器持续上报运行心跳':'请关闭并重新打开 GEO Operator 启动窗口';
+}
+
 function renderGuide(){
  const current=tenantId(),tenant=dashboardData.tenants.find(item=>item.id===current);
  const approvals=dashboardData.approvals.filter(item=>item.tenant_id===current&&item.status==='PENDING');
@@ -284,6 +293,7 @@ function renderGuide(){
  else if(executions.length&&executions.every(item=>item.state==='COMPLETED')){active=4;title='任务已全部完成';text='请申请并批准结果导出确认，然后下载最终结果包。';tone='success'}
  else if(packages.length){active=2;title='等待任务执行确认';text='请查看“待您确认”区域，批准后任务才会开始。'}
  const steps=['客户','档案','审批','执行','导出'];
+ if(dashboardData.health&&(!dashboardData.health.worker||!dashboardData.health.worker.available)){title='浏览器执行器未连接';text='请关闭并重新打开 GEO Operator 启动窗口。控制台仍可查看数据，但新任务不会执行。';tone='attention'}
  byId('workflowSteps').innerHTML=steps.map((label,index)=>'<div class="workflow-step '+(index<active?'done':index===active?'active':'')+'"><b>'+(index+1)+'</b>'+label+'</div>').join('');
  byId('nextAction').className='next-action '+tone;byId('nextActionTitle').textContent=title;byId('nextActionText').textContent=text;
 }

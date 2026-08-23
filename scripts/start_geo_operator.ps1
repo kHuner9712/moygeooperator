@@ -31,6 +31,16 @@ function Test-GeoOperatorHealth {
     }
 }
 
+function Test-WorkerHeartbeat {
+    try {
+        $response = Invoke-RestMethod -Uri $healthUrl -TimeoutSec 2
+        return $null -ne $response.worker -and [bool]$response.worker.available
+    }
+    catch {
+        return $false
+    }
+}
+
 function Test-WorkerRunning {
     $worker = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
@@ -93,8 +103,14 @@ function Ensure-BrowserWorker {
     param([string]$UvPath)
 
     if (Test-WorkerRunning) {
-        Write-LauncherLog "Browser Worker already running; reusing the existing process."
-        return
+        for ($attempt = 1; $attempt -le 16; $attempt++) {
+            if (Test-WorkerHeartbeat) {
+                Write-LauncherLog "Browser Worker heartbeat healthy; reusing the existing process."
+                return
+            }
+            Start-Sleep -Milliseconds 500
+        }
+        throw "Browser Worker process exists but has no heartbeat. Close the GEO Operator startup window and start it again."
     }
 
     Write-LauncherLog "Starting GEO Operator Browser Worker."
@@ -108,12 +124,9 @@ function Ensure-BrowserWorker {
         -PassThru
 
     for ($attempt = 1; $attempt -le 40; $attempt++) {
-        if (Test-WorkerRunning) {
-            Start-Sleep -Milliseconds 750
-            if (Test-WorkerRunning) {
-                Write-LauncherLog "Browser Worker running. Launcher PID=$($workerProcess.Id)."
-                return
-            }
+        if (Test-WorkerHeartbeat) {
+            Write-LauncherLog "Browser Worker heartbeat healthy. Launcher PID=$($workerProcess.Id)."
+            return
         }
 
         if ($workerProcess.HasExited) {

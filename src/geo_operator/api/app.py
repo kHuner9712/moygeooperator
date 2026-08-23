@@ -34,6 +34,7 @@ from geo_operator.mock_platform import router as mock_router
 from geo_operator.platforms import platform_definition
 from geo_operator.profiles import ClientProfileService
 from geo_operator.results import ResultService
+from geo_operator.runtime import RuntimeWorkerRegistry
 from geo_operator.sources import SourceIngestionService
 from geo_operator.tasks import DuplicateTaskPackageError, TaskPackageService
 from geo_operator.tenants import TenantService
@@ -110,6 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     manual_logins = ManualLoginLauncher(artifacts, database)
     results = ResultService(database, artifacts)
     result_packages = ResultPackageService(database, artifacts, approvals)
+    runtime_workers = RuntimeWorkerRegistry(database)
 
     app = FastAPI(title="GEO Operator V2", version=__version__)
     app.include_router(mock_router)
@@ -129,6 +131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "manual_logins": manual_logins,
         "results": results,
         "result_packages": result_packages,
+        "runtime_workers": runtime_workers,
     }
 
     def require_tenant(tenant_id: str) -> None:
@@ -171,9 +174,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return statuses
 
     @app.get("/api/health")
-    def health() -> dict[str, str]:
+    def health() -> dict[str, Any]:
+        worker = runtime_workers.latest("BROWSER")
+        queue = database.one(
+            """SELECT
+                 COALESCE(SUM(CASE WHEN state NOT IN
+                   ('COMPLETED','FAILED','PAUSED','WAIT_HUMAN_APPROVAL') THEN 1 ELSE 0 END),0)
+                   AS queued,
+                 COALESCE(SUM(CASE WHEN state='WAIT_HUMAN_APPROVAL' THEN 1 ELSE 0 END),0)
+                   AS waiting_approval,
+                 COALESCE(SUM(CASE WHEN state='PAUSED' THEN 1 ELSE 0 END),0)
+                   AS paused,
+                 COALESCE(SUM(CASE WHEN state='FAILED' THEN 1 ELSE 0 END),0)
+                   AS failed
+               FROM executions"""
+        ) or {}
         return {
-            "status": "ok",
+            "status": "ok" if worker["available"] else "degraded",
+            "control_service": "ok",
+            "worker": worker,
+            "queue": queue,
             "python": "3.12",
             "browser_mode": "headed",
             "browser_channel": settings.browser_channel or "playwright-chromium",

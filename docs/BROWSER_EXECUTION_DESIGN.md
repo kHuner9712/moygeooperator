@@ -141,6 +141,10 @@ Phase 1 首次真实校准允许在输入框和发送控件已确认后单次发
 5. 选择安全恢复状态。
 
 revalidate 无法确定时继续暂停。系统禁止自动解决验证码或安全验证。
+人工点击暂停后，持久状态立即变为 PAUSED。Worker 在发送前节奏等待、问题投递确认、回答流式观察、恢复 URL 等待和删除确认循环中持续复查该状态；检测到外部暂停后立即停止内存执行。若问题尚未发送，QUERY_SEND INTENT 会明确记录 action_attempted=false，恢复时才允许安全重试。正常的 OPERATOR_REQUESTED 中断不得记为恢复复核失败。
+
+独立 Browser Worker 每 2 秒把 STARTING、IDLE、CHECKING 或 BUSY 心跳写入 SQLite。控制台按 8 秒阈值判断 Worker 是否可用；API 存活但 Worker 失联时必须返回 degraded 并提示任务不会执行。一键启动器只有收到 Worker 心跳后才报告启动成功。
+
 
 ## 8. Session 管理
 

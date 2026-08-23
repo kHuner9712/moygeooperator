@@ -21,6 +21,11 @@ from geo_operator.core.db import Database
 from geo_operator.domain import ExecutionState, PauseReason
 from geo_operator.results import ResultService
 
+
+class ExecutionExternallyPaused(RuntimeError):
+    """Stop in-memory browser work after a durable pause was requested."""
+
+
 CrashHook = Callable[[str, str], None]
 
 
@@ -274,7 +279,7 @@ class BrowserWorker:
                 continue
 
             if state == ExecutionState.VERIFY_DELETE:
-                if not await self._wait_for_delete_confirmation(plugin, page):
+                if not await self._wait_for_delete_confirmation(execution_id, plugin, page):
                     return await self._pause(
                         execution_id, PauseReason.COMPLETION_UNCERTAIN.value, page.url
                     )
@@ -298,7 +303,13 @@ class BrowserWorker:
         if delay <= 0:
             return
         self.engine.record_operation_pacing(execution_id, delay)
-        await asyncio.sleep(delay)
+        deadline = time.monotonic() + delay
+        while True:
+            self._raise_if_paused(execution_id)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            await asyncio.sleep(min(self.config.poll_interval, remaining))
 
     async def _send_idempotently(
         self, execution: dict[str, Any], task: dict[str, Any], plugin: Any, page: Any
@@ -328,7 +339,11 @@ class BrowserWorker:
                     query_exists,
                     intervention,
                     delivery_failed,
-                ) = await self._wait_for_query_confirmation(plugin, page, str(task["prompt"]))
+                ) = await self._wait_for_query_confirmation(
+                    execution_id, plugin, page, str(task["prompt"])
+                )
+            except ExecutionExternallyPaused:
+                return self.engine.get(execution_id)
             except Exception as exc:  # noqa: BLE001 - uncertain send must pause
                 return await self._pause(
                     execution_id,
@@ -374,7 +389,14 @@ class BrowserWorker:
         page: Any,
     ) -> dict[str, Any] | None:
         execution_id = str(execution["id"])
-        await self._pace_before_query(execution_id)
+        try:
+            await self._pace_before_query(execution_id)
+        except ExecutionExternallyPaused:
+            self.engine.mark_effect_not_attempted(
+                str(effect["id"]), {"reason": PauseReason.OPERATOR_REQUESTED.value}
+            )
+            raise
+        self._raise_if_paused(execution_id)
         try:
             await plugin.send_query(page, str(task["prompt"]))
         except SideEffectNotAttempted as exc:
@@ -399,8 +421,10 @@ class BrowserWorker:
         self._crash("after_query_send", execution_id)
         try:
             query_exists, intervention, delivery_failed = await self._wait_for_query_confirmation(
-                plugin, page, str(task["prompt"])
+                execution_id, plugin, page, str(task["prompt"])
             )
+        except ExecutionExternallyPaused:
+            return self.engine.get(execution_id)
         except Exception as exc:  # noqa: BLE001 - sent query must not be repeated
             return await self._pause(
                 execution_id,
@@ -443,13 +467,14 @@ class BrowserWorker:
         started = time.monotonic()
         timeout = min(self.config.response_timeout, 5.0)
         while time.monotonic() - started < timeout:
+            self._raise_if_paused(execution_id)
             if validator(page.url):
                 self.engine.bind_recovery_url(execution_id, page.url)
                 return
             await asyncio.sleep(self.config.poll_interval)
 
     async def _wait_for_query_confirmation(
-        self, plugin: Any, page: Any, prompt: str
+        self, execution_id: str, plugin: Any, page: Any, prompt: str
     ) -> tuple[bool, str | None, bool]:
         """Confirm delivery, while preserving explicit platform rejection as retryable evidence."""
         started = time.monotonic()
@@ -457,6 +482,7 @@ class BrowserWorker:
         last_error: Exception | None = None
         while time.monotonic() - started < timeout:
             reason = await plugin.detect_human_intervention(page)
+            self._raise_if_paused(execution_id)
             try:
                 query_exists = await plugin.query_exists(page, prompt)
                 delivery_check = getattr(plugin, "query_delivery_failed", None)
@@ -488,6 +514,7 @@ class BrowserWorker:
         observation_error_started: float | None = None
         while time.monotonic() - started < self.config.response_timeout:
             self.leases.heartbeat(str(execution["id"]), self.worker_id)
+            self._raise_if_paused(str(execution["id"]))
             reason = await plugin.detect_human_intervention(page)
             if reason:
                 await self._pause(str(execution["id"]), reason, page.url)
@@ -533,10 +560,11 @@ class BrowserWorker:
         await self._pause(str(execution["id"]), PauseReason.COMPLETION_UNCERTAIN.value, page.url)
         return None
 
-    async def _wait_for_delete_confirmation(self, plugin: Any, page: Any) -> bool:
+    async def _wait_for_delete_confirmation(self, execution_id: str, plugin: Any, page: Any) -> bool:
         """Wait boundedly for both DOM absence and a usable signed-in page."""
         started = time.monotonic()
         while time.monotonic() - started < self.config.delete_confirmation_timeout:
+            self._raise_if_paused(execution_id)
             if await plugin.verify_chat_deleted(page) and await plugin.detect_login(page):
                 return True
             await asyncio.sleep(self.config.poll_interval)
@@ -556,14 +584,14 @@ class BrowserWorker:
         if effect:
             if effect["status"] == "CONFIRMED":
                 return None
-            if await self._wait_for_delete_confirmation(plugin, page):
+            if await self._wait_for_delete_confirmation(execution_id, plugin, page):
                 self.engine.confirm_effect(str(effect["id"]), {"chat_absent": True})
                 return None
             return await self._pause(execution_id, PauseReason.COMPLETION_UNCERTAIN.value, page.url)
         effect = self.engine.record_effect_intent(execution_id, "CHAT_DELETE", key)
         self._crash("before_chat_delete", execution_id)
         await plugin.delete_chat(page)
-        if not await self._wait_for_delete_confirmation(plugin, page):
+        if not await self._wait_for_delete_confirmation(execution_id, plugin, page):
             return await self._pause(execution_id, PauseReason.COMPLETION_UNCERTAIN.value, page.url)
         self.engine.confirm_effect(str(effect["id"]), {"chat_absent": True})
         return None
@@ -660,7 +688,7 @@ class BrowserWorker:
             if callable(wait_for_hydration):
                 hydration = await wait_for_hydration(page)
                 if hydration != "CONVERSATION_CONTENT":
-                    if pending_delete and await self._wait_for_delete_confirmation(plugin, page):
+                    if pending_delete and await self._wait_for_delete_confirmation(execution_id, plugin, page):
                         return
                     absence_check = getattr(plugin, "deletion_absence_confirmed", None)
                     if (
@@ -703,6 +731,13 @@ class BrowserWorker:
                     )
             return
         raise RuntimeError("No safe same-origin pause URL is available")
+
+    def _raise_if_paused(self, execution_id: str) -> None:
+        execution = self.engine.get(execution_id)
+        if execution["state"] == ExecutionState.PAUSED.value:
+            raise ExecutionExternallyPaused(
+                f"Execution {execution_id} was paused outside the active worker"
+            )
 
     def _approval(self, execution: dict[str, Any]) -> dict[str, Any]:
         row = self.database.one(

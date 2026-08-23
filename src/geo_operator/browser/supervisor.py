@@ -11,6 +11,7 @@ from geo_operator.browser.worker import BrowserWorker, WorkerConfig
 from geo_operator.core.db import Database
 from geo_operator.domain import PauseReason
 from geo_operator.results import ResultService
+from geo_operator.runtime import RuntimeWorkerRegistry
 
 
 class WorkerSupervisor:
@@ -32,6 +33,8 @@ class WorkerSupervisor:
         self.plugins = plugins
         self.config = config or WorkerConfig()
         self.worker_id = f"supervisor-{uuid.uuid4().hex}"
+        self.runtime = RuntimeWorkerRegistry(database)
+        self._runtime_status = "STARTING"
 
     async def run_once(self) -> bool:
         self.leases.release_expired()
@@ -84,6 +87,7 @@ class WorkerSupervisor:
         )
         if not execution:
             return False
+        self._runtime_status = "BUSY"
         worker = BrowserWorker(
             self.database,
             self.sessions,
@@ -115,11 +119,12 @@ class WorkerSupervisor:
         except Exception as exc:  # noqa: BLE001 - browser failures must fail closed
             current = self.engine.get(str(execution["id"]))
             if current["state"] == "PAUSED":
-                self.engine.record_resume_revalidation_failure(
-                    str(execution["id"]),
-                    PauseReason.PAGE_ABNORMAL.value,
-                    {"error": type(exc).__name__, "message": str(exc)},
-                )
+                if current["pause_reason"] != PauseReason.OPERATOR_REQUESTED.value:
+                    self.engine.record_resume_revalidation_failure(
+                        str(execution["id"]),
+                        PauseReason.PAGE_ABNORMAL.value,
+                        {"error": type(exc).__name__, "message": str(exc)},
+                    )
             elif current["state"] not in {"FAILED", "COMPLETED"}:
                 self.engine.pause(
                     str(execution["id"]),
@@ -129,10 +134,32 @@ class WorkerSupervisor:
         return True
 
     async def run_forever(self, idle_seconds: float = 1.0) -> None:
+        self.runtime.register(
+            self.worker_id,
+            "BROWSER",
+            {"idle_seconds": idle_seconds, "headless": self.config.headless},
+        )
+        self._runtime_status = "IDLE"
+        heartbeat_task = asyncio.create_task(self._heartbeat_runtime())
         try:
             while True:
+                if heartbeat_task.done():
+                    heartbeat_task.result()
+                self._runtime_status = "CHECKING"
                 worked = await self.run_once()
+                self._runtime_status = "IDLE"
                 if not worked:
                     await asyncio.sleep(idle_seconds)
         finally:
-            await self.sessions.close_all()
+            if not heartbeat_task.done():
+                heartbeat_task.cancel()
+            await asyncio.gather(heartbeat_task, return_exceptions=True)
+            try:
+                self.runtime.stop(self.worker_id)
+            finally:
+                await self.sessions.close_all()
+
+    async def _heartbeat_runtime(self) -> None:
+        while True:
+            self.runtime.heartbeat(self.worker_id, self._runtime_status)
+            await asyncio.sleep(2.0)

@@ -12,7 +12,7 @@ GEO Operator V2 是本地运行的内部 GEO 服务执行工具。它负责多�
 - SQLite `artifacts` 目录登记所有原子写入文件和导出包的路径、SHA-256、大小、MIME 与时间
 - `GEO_TASK_PACKAGE.zip` 安全导入：schema、tenant、SHA-256、ZIP 路径、平台、任务 ID、账号 ID、序号和幂等键校验
 - 持久化 Browser Execution 状态机、外部副作用 intent/confirmed 账本、回答 checkpoint、实时截图和结果原子提交
-- 独立 Browser Worker、执行租约、心跳、过期租约回收、Session 单执行锁、persistent Chromium profile，并显式启用 Chromium sandbox
+- 独立 Browser Worker、执行租约与运行心跳、过期租约回收、Session 单执行锁、persistent Chromium profile；控制台可区分 API 存活与 Worker 失联，并显式启用 Chromium sandbox
 - 验证码、登录失效、安全验证、限流、账号受限、DOM 异常和完成不确定时 fail closed 暂停，禁止自动绕过
 - 人工接管后由独立 Worker 重新验证；复核失败保留暂停状态和截图证据
 - 验证类暂停按 tenant/platform/account 阻塞所有任务包，Session 显示 HUMAN_TAKEOVER_REQUIRED；仅人工 Continue + Worker 复核可解除
@@ -48,7 +48,7 @@ uv run playwright install chromium
 - 检查并启动本地控制台；
 - 检查并启动 Browser Worker；
 - 避免重复启动两个进程；
-- 等待控制台健康检查通过；
+- 等待控制台健康检查和 Browser Worker 持续心跳通过；
 - 自动打开 <http://127.0.0.1:8765>。
 
 运行日志分别保存在 `logs/launcher.log`、`logs/server.stdout.log`、`logs/server.stderr.log`、`logs/worker.stdout.log` 和 `logs/worker.stderr.log`。正常操作不再需要手工运行 Worker 命令。
