@@ -77,6 +77,8 @@ class DoubaoAdapterAsyncTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[data-testid='send_message']", page.expression)
         self.assertIn("[data-testid='receive_message']", page.expression)
         self.assertIn("[class*='message-list-'] .v_list_row", page.expression)
+        self.assertIn("document.querySelector(selector)", page.expression)
+        self.assertNotIn("querySelectorAll(selector)].some(visible)", page.expression)
         self.assertEqual(page.timeout, 30_000)
 
     async def test_hydration_recovers_onto_replacement_page_after_old_tab_closes(self) -> None:
