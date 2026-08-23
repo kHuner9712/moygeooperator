@@ -14,10 +14,39 @@ class _HydrationPage:
         self.expression = ""
         self.timeout = None
 
+    def is_closed(self) -> bool:
+        return False
+
     async def wait_for_function(self, expression, *, timeout):
         self.expression = expression
         self.timeout = timeout
         return _HydrationSignal()
+
+
+class _ReplacementContext:
+    def __init__(self) -> None:
+        self.pages = []
+
+    async def new_page(self):
+        page = _HydrationPage()
+        page.context = self
+        self.pages.append(page)
+        return page
+
+
+class _ClosingHydrationPage:
+    def __init__(self, context: _ReplacementContext) -> None:
+        self.context = context
+        self.closed = False
+        self.calls = 0
+
+    def is_closed(self) -> bool:
+        return self.closed
+
+    async def wait_for_function(self, expression, *, timeout):
+        self.calls += 1
+        self.closed = True
+        raise Exception("Page.wait_for_function: Target page, context or browser has been closed")
 
 
 class DoubaoAdapterTestCase(unittest.TestCase):
@@ -49,6 +78,21 @@ class DoubaoAdapterAsyncTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[data-testid='receive_message']", page.expression)
         self.assertIn("[class*='message-list-'] .v_list_row", page.expression)
         self.assertEqual(page.timeout, 30_000)
+
+    async def test_hydration_recovers_onto_replacement_page_after_old_tab_closes(self) -> None:
+        plugin = DoubaoPlugin()
+        context = _ReplacementContext()
+        replacement = _HydrationPage()
+        replacement.context = context
+        old_page = _ClosingHydrationPage(context)
+        context.pages = [old_page, replacement]
+
+        result = await plugin.wait_for_calibration_hydration(old_page)
+
+        self.assertEqual(result, "CONVERSATION_CONTENT")
+        self.assertEqual(old_page.calls, 1)
+        self.assertIn("[data-testid='send_message']", replacement.expression)
+        self.assertEqual(replacement.timeout, 30_000)
 
 
 if __name__ == "__main__":
