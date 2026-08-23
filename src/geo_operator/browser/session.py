@@ -197,8 +197,19 @@ class BrowserSessionManager:
     ) -> Any:
         self.validate_identity(platform, account_id)
         key = (tenant_id, platform, account_id)
-        if key in self._open:
-            return self._open[key].context
+        managed = self._open.get(key)
+        if managed:
+            try:
+                # The operator may close a headed Worker Chrome window manually. Playwright can
+                # leave the BrowserContext object in our process dictionary until the next
+                # protocol operation, so never trust dictionary membership as a liveness check.
+                # cookies() is a side-effect-free protocol round-trip; its result is discarded.
+                await managed.context.cookies()
+                return managed.context
+            except Exception as exc:
+                if not self._is_closed_context_error(exc):
+                    raise
+                await self._discard_stale(key, managed)
         from playwright.async_api import async_playwright
 
         profile_relative = f"sessions/{platform}/{account_id}"
@@ -232,6 +243,41 @@ class BrowserSessionManager:
                 )
         return context
 
+    @staticmethod
+    def _is_closed_context_error(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return any(
+            marker in text
+            for marker in (
+                "target page, context or browser has been closed",
+                "browser has been closed",
+                "context has been closed",
+                "connection closed",
+                "target closed",
+            )
+        )
+
+    async def _discard_stale(
+        self, key: tuple[str, str, str], managed: ManagedBrowser
+    ) -> None:
+        self._open.pop(key, None)
+        try:
+            await managed.context.close()
+        except Exception:
+            pass
+        try:
+            await managed.playwright.stop()
+        except Exception:
+            pass
+        if self.database:
+            tenant_id, platform, account_id = key
+            with self.database.transaction() as connection:
+                connection.execute(
+                    """UPDATE browser_sessions SET status='CLOSED',updated_at=?
+                       WHERE tenant_id=? AND platform=? AND account_id=?""",
+                    (utc_now(), tenant_id, platform, account_id),
+                )
+
     def _launch_options(self, profile: Path, headless: bool) -> dict[str, Any]:
         options: dict[str, Any] = {
             "user_data_dir": str(profile),
@@ -256,12 +302,12 @@ class BrowserSessionManager:
             try:
                 await managed.context.close()
             except Exception as exc:
-                if "Connection closed" not in str(exc):
+                if not self._is_closed_context_error(exc):
                     raise
             try:
                 await managed.playwright.stop()
             except Exception as exc:
-                if "Connection closed" not in str(exc):
+                if "connection closed" not in str(exc).lower():
                     raise
         if self.database:
             with self.database.transaction() as connection:
