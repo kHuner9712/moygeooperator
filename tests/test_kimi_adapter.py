@@ -31,6 +31,26 @@ class KimiAdapterTestCase(unittest.TestCase):
         self.assertIn("a[href*='/chat/']", source)
 
 
+class KimiPlatformEntryTestCase(unittest.IsolatedAsyncioTestCase):
+    async def test_open_platform_forces_fresh_new_chat_from_existing_conversation(self) -> None:
+        plugin = KimiPlugin()
+        page = SimpleNamespace(
+            url="https://www.kimi.com/chat/12345678-1234-1234-1234-123456789abc",
+            goto=AsyncMock(),
+            reload=AsyncMock(),
+        )
+        plugin._any_visible = AsyncMock(return_value=False)
+        plugin._one_visible = AsyncMock(return_value=object())
+
+        await plugin.open_platform(page)
+
+        page.goto.assert_awaited_once_with(
+            "https://www.kimi.com/?chat_enter_method=new_chat",
+            wait_until="domcontentloaded",
+        )
+        page.reload.assert_not_awaited()
+
+
 class KimiDroppedSendRecoveryTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_idle_exact_prompt_retries_once_without_new_user_turn(self) -> None:
         plugin = KimiPlugin()
